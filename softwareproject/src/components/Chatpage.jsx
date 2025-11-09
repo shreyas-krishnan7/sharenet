@@ -8,6 +8,7 @@ export default function SharentChat() {
   const [messages, setMessages] = useState({});
   const [message, setMessage] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
+  const incomingFileRef = useRef(null);
 
   // WebRTC Refs
   const pcRef = useRef(null);
@@ -134,18 +135,75 @@ export default function SharentChat() {
 
     channel.onopen = () => console.log("✅ DataChannel open — ready to chat");
 
-    channel.onmessage = (e) => {
-      const text = e.data;
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const fromId = targetPeerIdRef.current;
+    
 
-      setMessages((prev) => ({
-        ...prev,
-        [fromId]: [...(prev[fromId] || []), { text, time: now, sender: fromId }],
-      }));
+    channel.onmessage = (e) => {
+      if (typeof e.data === "string") {
+        try {
+          const msg = JSON.parse(e.data);
+
+          if (msg.type === "file-meta") {
+            incomingFileRef.current = {
+              name: msg.name,
+              size: msg.size,
+              mime: msg.mime,
+              totalChunks: msg.totalChunks,
+              chunks: [],
+            };
+            console.log("📩 Receiving file:", msg.name);
+            return;
+          }
+
+          if (msg.type === "file-end" && incomingFileRef.current) {
+            const file = incomingFileRef.current;
+            const blob = new Blob(file.chunks, { type: file.mime });
+            const url = URL.createObjectURL(blob);
+            const now = new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            setMessages((prev) => ({
+              ...prev,
+              [targetPeerIdRef.current]: [
+                ...(prev[targetPeerIdRef.current] || []),
+                {
+                  text: `📎 Received file: ${file.name}`,
+                  fileURL: url,
+                  isFile: true,
+                  fileName: file.name,
+                  time: now,
+                  sender: targetPeerIdRef.current,
+                },
+              ],
+            }));
+
+            console.log("✅ File received:", file.name);
+            incomingFileRef.current = null;
+            return;
+          }
+        } catch {
+          // Handle normal text messages
+          const text = e.data;
+          const now = new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const fromId = targetPeerIdRef.current;
+
+          setMessages((prev) => ({
+            ...prev,
+            [fromId]: [
+              ...(prev[fromId] || []),
+              { text, time: now, sender: fromId },
+            ],
+          }));
+        }
+      } else if (e.data instanceof ArrayBuffer) {
+        if (incomingFileRef.current) {
+          incomingFileRef.current.chunks.push(e.data);
+        }
+      }
     };
 
     channel.onclose = () => console.log("❌ DataChannel closed");
@@ -189,6 +247,61 @@ export default function SharentChat() {
     }));
     setMessage("");
   };
+  // 🧠 Handle File Selection & Sending
+const handleFileSelect = async (e) => {
+  const file = e.target.files[0];
+  if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
+    alert("⚠️ DataChannel not ready or no file selected.");
+    return;
+  }
+
+  const chunkSize = 16 * 1024; // 16KB
+  const fileReader = new FileReader();
+
+  fileReader.onload = async (event) => {
+    const buffer = event.target.result;
+    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+
+    // Send file metadata first
+    dcRef.current.send(JSON.stringify({
+      type: "file-meta",
+      name: file.name,
+      size: file.size,
+      mime: file.type,
+      totalChunks
+    }));
+
+    // Send chunks
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const chunk = buffer.slice(offset, offset + chunkSize);
+      dcRef.current.send(chunk);
+      offset += chunkSize;
+    }
+
+    // Send end marker
+    dcRef.current.send(JSON.stringify({ type: "file-end" }));
+
+    console.log(`✅ File sent: ${file.name}`);
+
+    // Display in sender chat
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newMsg = {
+      text: `📎 Sent file: ${file.name}`,
+      time: now,
+      sender: currentUser?.id,
+      isFile: true,
+      fileName: file.name
+    };
+    setMessages(prev => ({
+      ...prev,
+      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg]
+    }));
+  };
+
+  fileReader.readAsArrayBuffer(file);
+};
+
 
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -318,9 +431,7 @@ export default function SharentChat() {
                                 ? "text-white rounded-br-sm"
                                 : "bg-gray-200 text-gray-900 rounded-bl-sm"
                             }`}
-                            style={
-                              isMine ? { backgroundColor: "#e91359" } : {}
-                            }
+                            style={isMine ? { backgroundColor: "#e91359" } : {}}
                           >
                             {isMine && (
                               <strong className="block text-xs opacity-90 mb-1">
@@ -328,7 +439,17 @@ export default function SharentChat() {
                               </strong>
                             )}
                             <span className="whitespace-pre-wrap break-words">
-                              {msg.text}
+                              {msg.isFile ? (
+                                <a
+                                  href={msg.fileURL || "#"}
+                                  download={msg.fileName}
+                                  className="text-blue-600 underline hover:text-blue-800"
+                                >
+                                  {msg.text}
+                                </a>
+                              ) : (
+                                msg.text
+                              )}
                             </span>
                           </div>
                           <div
@@ -357,6 +478,24 @@ export default function SharentChat() {
             </div>
 
             <div className="bg-white border-t border-gray-200 p-4 flex gap-3 flex-shrink-0">
+              {/* Hidden file input */}
+              <input
+                type="file"
+                id="fileInput"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              {/* 📎 Attach Button */}
+              <button
+                onClick={() => document.getElementById("fileInput").click()}
+                className="px-3 py-3 text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-100 transition-all duration-200 flex items-center justify-center"
+                title="Attach file"
+              >
+                📎
+              </button>
+
+              {/* Message Input */}
               <input
                 type="text"
                 value={message}
@@ -365,16 +504,12 @@ export default function SharentChat() {
                 placeholder="Type a message..."
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#e91359] focus:ring-2 focus:ring-[#e91359]/20 transition-all"
               />
+
+              {/* Send Button */}
               <button
                 onClick={handleSendMessage}
                 className="px-6 py-3 text-white rounded-lg font-medium flex items-center gap-2 transition-all duration-200 hover:shadow-lg active:scale-95 flex-shrink-0"
                 style={{ backgroundColor: "#e91359" }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#d01050")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#e91359")
-                }
               >
                 <svg
                   width="20"
