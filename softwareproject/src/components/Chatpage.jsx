@@ -99,15 +99,33 @@ export default function SharentChat() {
     cleanupPeerConnection();
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        {
-          urls: "turn:relay1.expressturn.com:3478",
-          username: "efV7A...demoUser",
-          credential: "demoPass123",
-        },
-      ],
-    });
+   iceServers: [
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "99233f39212e9124c007bab2",
+        credential: "1TiVAiSMvWI3b6ah",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "99233f39212e9124c007bab2",
+        credential: "1TiVAiSMvWI3b6ah",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "99233f39212e9124c007bab2",
+        credential: "1TiVAiSMvWI3b6ah",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "99233f39212e9124c007bab2",
+        credential: "1TiVAiSMvWI3b6ah",
+      },
+  ],
+});
+
 
     pcRef.current = pc;
     targetPeerIdRef.current = targetId;
