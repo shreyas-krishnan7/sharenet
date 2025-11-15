@@ -92,9 +92,23 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join-call", ({ roomId }) => {
-    socket.join(roomId);
-    console.log(`👥 ${socket.id} joined call room ${roomId}`);
-  });
+  socket.join(roomId);
+
+  const room = io.sockets.adapter.rooms.get(roomId);
+  const participants = room ? room.size : 0;
+
+  console.log(`Room ${roomId} participants:`, participants);
+
+  // Notify both users of room count
+  io.to(roomId).emit("room-joined", { participants });
+});
+  socket.on("ready", (roomId) => {
+  socket.to(roomId).emit("ready");
+});
+
+socket.on("other-joined", (roomId) => {
+  socket.to(roomId).emit("other-joined");
+});
 
   socket.on("offer", ({ roomId, sdp }) => {
     socket.to(roomId).emit("offer", { sdp });

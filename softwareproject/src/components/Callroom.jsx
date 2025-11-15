@@ -17,7 +17,7 @@ export default function CallRoom({ socket }) {
     socket.emit("join-call", { roomId });
 
     socket.once("ready", () => {
-      setIsCaller(true);  // first user
+      setIsCaller(true); // first user
     });
 
     socket.once("other-joined", () => {
@@ -42,9 +42,11 @@ export default function CallRoom({ socket }) {
 
     pcRef.current = createPeerConnection();
 
-    localStreamRef.current.getTracks().forEach((track) =>
-      pcRef.current.addTrack(track, localStreamRef.current)
-    );
+    localStreamRef.current
+      .getTracks()
+      .forEach((track) =>
+        pcRef.current.addTrack(track, localStreamRef.current)
+      );
   };
 
   const createPeerConnection = () => {
@@ -88,6 +90,9 @@ export default function CallRoom({ socket }) {
     };
 
     pc.onnegotiationneeded = async () => {
+      // Wait until isCaller has correct value
+      await new Promise((r) => setTimeout(r, 200));
+
       if (!isCaller) return;
 
       const offer = await pc.createOffer();
