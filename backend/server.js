@@ -100,7 +100,7 @@ io.on("connection", (socket) => {
   console.log(`👥 Room ${roomId} participants:`, participants);
 
   // Notify both users of room count
-  io.to(roomId).emit("room-joined", { participants });
+  socket.emit("room-joined", { participants });
 });
 
   socket.on("offer", ({ roomId, sdp }) => {
