@@ -8,7 +8,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 
 dotenv.config();
-connectDB();
+connectDB(); // connect to database
 
 const app = express();
 
