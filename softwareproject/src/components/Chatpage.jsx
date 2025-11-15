@@ -59,29 +59,31 @@ export default function SharentChat() {
     });
 
     // Receive offer (callee)
-    s.on("offer", async ({ offer, from }) => {
-      console.log("📩 Received offer from:", from);
+    // 📩 CHAT OFFER (callee)
+    s.on("chat-offer", async ({ offer, from }) => {
+      console.log("📩 Chat offer from:", from);
       createPeerConnection(from);
       await pcRef.current.setRemoteDescription(offer);
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
-      s.emit("answer", { to: from, answer, from: me.id });
+
+      s.emit("chat-answer", { to: from, from: me.id, answer });
     });
 
-    // Receive answer (caller)
-    s.on("answer", async ({ answer }) => {
-      console.log("✅ Received answer");
+    // 📥 CHAT ANSWER (caller)
+    s.on("chat-answer", async ({ answer }) => {
+      console.log("✅ Chat answer received");
       if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
     });
 
-    // Receive ICE candidates
-    s.on("candidate", async ({ candidate, from }) => {
+    // 🌍 CHAT ICE CANDIDATE
+    s.on("chat-candidate", async ({ candidate, from }) => {
       if (candidate && pcRef.current) {
         try {
           await pcRef.current.addIceCandidate(candidate);
-          console.log("🌍 Added ICE candidate from:", from);
+          console.log("🌍 Chat ICE added from:", from);
         } catch (err) {
-          console.error("Error adding candidate:", err);
+          console.error("Error adding chat ICE candidate:", err);
         }
       }
     });
@@ -131,7 +133,7 @@ export default function SharentChat() {
 
     pc.onicecandidate = (e) => {
       if (e.candidate && socket) {
-        socket.emit("candidate", {
+        socket.emit("chat-candidate", {
           to: targetPeerIdRef.current,
           from: currentUser?.id,
           candidate: e.candidate,
@@ -239,7 +241,7 @@ export default function SharentChat() {
     const offer = await pcRef.current.createOffer();
     await pcRef.current.setLocalDescription(offer);
 
-    socket.emit("offer", {
+    socket.emit("chat-offer", {
       to: user.id,
       from: currentUser?.id,
       offer,
@@ -336,31 +338,30 @@ export default function SharentChat() {
   };
 
   const handleCallClick = async (user) => {
-  try {
-    // 1️⃣ Ask camera + mic permission BEFORE navigating
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    try {
+      // 1️⃣ Ask camera + mic permission BEFORE navigating
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
 
-    // 2️⃣ Save the stream for reuse on CallPage
-    localStorage.setItem("localStreamAvailable", "true");
+      // 2️⃣ Save the stream for reuse on CallPage
+      localStorage.setItem("localStreamAvailable", "true");
 
-    // 3️⃣ Build navigation data
-    const callData = {
-      currentUser,        // Caller
-      targetUser: user,   // Receiver
-      socketUrl: SOCKET_URL, // Your deployed signaling server
-    };
+      // 3️⃣ Build navigation data
+      const callData = {
+        currentUser, // Caller
+        targetUser: user, // Receiver
+        socketUrl: SOCKET_URL, // Your deployed signaling server
+      };
 
-    // 4️⃣ Navigate to CallPage while sending call data
-    navigate(`/call/${user.id}`, { state: callData });
-  } catch (err) {
-    console.error("Permission error:", err);
-    alert("Camera/Microphone permission is required to start a call.");
-  }
-};
-
+      // 4️⃣ Navigate to CallPage while sending call data
+      navigate(`/call/${user.id}`, { state: callData });
+    } catch (err) {
+      console.error("Permission error:", err);
+      alert("Camera/Microphone permission is required to start a call.");
+    }
+  };
 
   // 🧹 Cleanup
   const cleanupPeerConnection = () => {

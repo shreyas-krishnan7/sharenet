@@ -11,14 +11,18 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors({
-  origin: [
-    "https://sharenet-ashen.vercel.app",   // your Vercel frontend
-    "http://localhost:5173",               // local frontend dev
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
-}));
+
+app.use(
+  cors({
+    origin: [
+      "https://sharenet-ashen.vercel.app", // your Vercel frontend
+      "http://localhost:5173",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // ---- API ROUTES ---- //
@@ -34,52 +38,81 @@ const server = createServer(app);
 // ---- SOCKET.IO SIGNALLING ---- //
 const io = new Server(server, {
   cors: {
-    origin: "*",              // For deployment change this to your frontend domain
+    origin: "*", // Expand later to limit origins
     methods: ["GET", "POST"],
   },
 });
 
 let onlineUsers = {};
 
-// When a user connects
+// ---- SOCKET HANDLERS ---- //
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  // User joins system
+  // A user joins the platform
   socket.on("join", (user) => {
     onlineUsers[user.id] = { ...user, socketId: socket.id };
     console.log("📌 User joined:", user);
-
     io.emit("online-users", Object.values(onlineUsers));
   });
 
-  // Handle WebRTC Offer
-  socket.on("offer", ({ to, from, offer }) => {
-    console.log(`📤 Offer sent from ${from} → ${to}`);
+  // ------------------------------------------------------------
+  // 🔹 CHAT SIGNALING (DataChannel Only — text + file sharing)
+  // ------------------------------------------------------------
+
+  socket.on("chat-offer", ({ to, from, offer }) => {
+    console.log(`💬 Chat Offer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
-      io.to(target.socketId).emit("offer", { offer, from });
+      io.to(target.socketId).emit("chat-offer", { offer, from });
     }
   });
 
-  // Handle WebRTC Answer
-  socket.on("answer", ({ to, from, answer }) => {
-    console.log(`📥 Answer sent from ${from} → ${to}`);
+  socket.on("chat-answer", ({ to, from, answer }) => {
+    console.log(`💬 Chat Answer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
-      io.to(target.socketId).emit("answer", { answer, from });
+      io.to(target.socketId).emit("chat-answer", { answer, from });
     }
   });
 
-  // Handle ICE Candidates
-  socket.on("candidate", ({ to, from, candidate }) => {
+  socket.on("chat-candidate", ({ to, from, candidate }) => {
     const target = onlineUsers[to];
     if (target) {
-      io.to(target.socketId).emit("candidate", { candidate, from });
+      io.to(target.socketId).emit("chat-candidate", { candidate, from });
     }
   });
 
-  // Disconnecting
+  // ------------------------------------------------------------
+  // 🔹 CALL SIGNALING (Audio/Video WebRTC)
+  // ------------------------------------------------------------
+
+  socket.on("call-offer", ({ to, from, offer }) => {
+    console.log(`📞 Call Offer: ${from} → ${to}`);
+    const target = onlineUsers[to];
+    if (target) {
+      io.to(target.socketId).emit("call-offer", { offer, from });
+    }
+  });
+
+  socket.on("call-answer", ({ to, from, answer }) => {
+    console.log(`📞 Call Answer: ${from} → ${to}`);
+    const target = onlineUsers[to];
+    if (target) {
+      io.to(target.socketId).emit("call-answer", { answer, from });
+    }
+  });
+
+  socket.on("call-candidate", ({ to, from, candidate }) => {
+    const target = onlineUsers[to];
+    if (target) {
+      io.to(target.socketId).emit("call-candidate", { candidate, from });
+    }
+  });
+
+  // ------------------------------------------------------------
+  // 🔹 USER DISCONNECT
+  // ------------------------------------------------------------
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id);
 
