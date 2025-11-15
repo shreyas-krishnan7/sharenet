@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 
-
-
 export default function SharentChat() {
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -13,7 +11,7 @@ export default function SharentChat() {
   const [currentUser, setCurrentUser] = useState(null);
   const incomingFileRef = useRef(null);
   const navigate = useNavigate();
-  const SOCKET_URL = "http://localhost:8080";
+  const SOCKET_URL = "https://sharenet-dehy.onrender.com";
 
   // WebRTC Refs
   const pcRef = useRef(null);
@@ -48,7 +46,9 @@ export default function SharentChat() {
     setCurrentUser(me);
 
     // Connect socket
-    const s = io("http://localhost:8080");
+    const s = io(SOCKET_URL, {
+      transports: ["websocket"],
+    });
     setSocket(s);
     s.emit("join", me);
 
@@ -320,20 +320,25 @@ export default function SharentChat() {
 
   const handleCallClick = async (user) => {
   try {
-    // Ask for camera/mic permission *before* going to the call page
-    await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-
-    navigate("/call", {
-      state: {
-        currentUser: currentUser,   // YOU (caller)
-        targetUser: user,           // person you are calling
-        socketUrl: SOCKET_URL,      // your backend signaling URL
-        isCaller: true,             // tells CallPage to initiate offer
-      },
+    // Ask permission before navigating
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
     });
+
+    // Build the navigation state
+    const callData = {
+      currentUser,       // YOU (caller)
+      targetUser: user,  // Selected user
+      socketUrl: SOCKET_URL, // Your deployed signaling server
+    };
+
+    // Navigate to call page and pass call data
+    navigate(`/call/${user.id}`, { state: callData });
+
   } catch (err) {
-    console.error("Error accessing media devices:", err);
-    alert("Camera/Microphone access required to start the call.");
+    console.error("Permission error:", err);
+    alert("Camera/Microphone access is required to start a call.");
   }
 };
 
