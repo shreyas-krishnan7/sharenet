@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 export default function CallRoom({ socket }) {
@@ -6,34 +6,75 @@ export default function CallRoom({ socket }) {
 
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
-  const peerRef = useRef(null);
-  const localStream = useRef(null);
+  const pcRef = useRef(null);
+  const localStreamRef = useRef(null);
+
+  const [isCaller, setIsCaller] = useState(false);
 
   useEffect(() => {
-    initCall();
-  }, []);
+    if (!socket) return;
 
-  const initCall = async () => {
     socket.emit("join-call", { roomId });
 
-    localStream.current = await navigator.mediaDevices.getUserMedia({
+    socket.once("ready", () => {
+      setIsCaller(true);  // first user
+    });
+
+    socket.once("other-joined", () => {
+      setIsCaller(false); // second user
+    });
+
+    initMedia();
+    setupSocketListeners();
+
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  const initMedia = async () => {
+    localStreamRef.current = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
     });
 
-    localVideo.current.srcObject = localStream.current;
+    localVideo.current.srcObject = localStreamRef.current;
 
-    peerRef.current = new RTCPeerConnection();
+    pcRef.current = createPeerConnection();
 
-    localStream.current.getTracks().forEach(track =>
-      peerRef.current.addTrack(track, localStream.current)
+    localStreamRef.current.getTracks().forEach((track) =>
+      pcRef.current.addTrack(track, localStreamRef.current)
     );
+  };
 
-    peerRef.current.ontrack = (event) => {
-      remoteVideo.current.srcObject = event.streams[0];
-    };
+  const createPeerConnection = () => {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.relay.metered.ca:80" },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+      ],
+    });
 
-    peerRef.current.onicecandidate = (event) => {
+    pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("ice-candidate", {
           roomId,
@@ -42,33 +83,80 @@ export default function CallRoom({ socket }) {
       }
     };
 
+    pc.ontrack = (event) => {
+      remoteVideo.current.srcObject = event.streams[0];
+    };
+
+    pc.onnegotiationneeded = async () => {
+      if (!isCaller) return;
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("offer", { roomId, sdp: offer });
+    };
+
+    return pc;
+  };
+
+  const setupSocketListeners = () => {
     socket.on("offer", async ({ sdp }) => {
-      await peerRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-      const answer = await peerRef.current.createAnswer();
-      await peerRef.current.setLocalDescription(answer);
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+      const answer = await pcRef.current.createAnswer();
+      await pcRef.current.setLocalDescription(answer);
+
       socket.emit("answer", { roomId, sdp: answer });
     });
 
     socket.on("answer", async ({ sdp }) => {
-      await peerRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
     });
 
-    socket.on("ice-candidate", ({ candidate }) => {
-      peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    socket.on("ice-candidate", async ({ candidate }) => {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("ICE error:", err);
+      }
     });
 
-    peerRef.current.onnegotiationneeded = async () => {
-      const offer = await peerRef.current.createOffer();
-      await peerRef.current.setLocalDescription(offer);
+    socket.on("room-joined", ({ participants }) => {
+      if (participants === 1) {
+        setIsCaller(true);
+        socket.emit("ready", roomId);
+      } else if (participants === 2) {
+        setIsCaller(false);
+        socket.emit("other-joined", roomId);
+      }
+    });
+  };
 
-      socket.emit("offer", { roomId, sdp: offer });
-    };
+  const cleanup = () => {
+    if (pcRef.current) pcRef.current.close();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-black text-white">
-      <video ref={localVideo} autoPlay playsInline className="w-1/3 rounded border" />
-      <video ref={remoteVideo} autoPlay playsInline className="w-1/3 rounded border mt-4" />
+    <div className="flex flex-col items-center justify-center h-screen bg-black text-white gap-4">
+      <h2 className="text-xl font-semibold mb-4">Video Call</h2>
+
+      <video
+        ref={localVideo}
+        autoPlay
+        muted
+        playsInline
+        className="w-1/3 rounded-xl border"
+      />
+
+      <video
+        ref={remoteVideo}
+        autoPlay
+        playsInline
+        className="w-1/3 rounded-xl border"
+      />
     </div>
   );
 }
