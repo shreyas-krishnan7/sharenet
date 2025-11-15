@@ -144,14 +144,6 @@ export default function CallRoom({ socket }) {
     // Keep onnegotiationneeded as a fallback (some browsers do fire it)
     pcRef.current.onnegotiationneeded = async () => {
       if (!isCaller) return;
-      try {
-        console.log("📡 onnegotiationneeded fired - caller creating offer...");
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
-        socket.emit("offer", { roomId, sdp: offer });
-      } catch (err) {
-        console.error("Negotiation error:", err);
-      }
     };
   };
 
