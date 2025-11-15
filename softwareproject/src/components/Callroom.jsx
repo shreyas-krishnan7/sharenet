@@ -9,28 +9,40 @@ export default function CallRoom({ socket }) {
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
 
-  const [isCaller, setIsCaller] = useState(false);
+  const [isCaller, setIsCaller] = useState(null); // null until known
 
   useEffect(() => {
     if (!socket) return;
 
     socket.emit("join-call", { roomId });
 
-    socket.once("ready", () => {
-      setIsCaller(true); // first user
+    // 🔹 Server tells how many participants are in the room
+    socket.on("room-joined", ({ participants }) => {
+      if (participants === 1) {
+        setIsCaller(true);     // First user
+      } else if (participants === 2) {
+        setIsCaller(false);    // Second user
+      }
     });
 
-    socket.once("other-joined", () => {
-      setIsCaller(false); // second user
-    });
+    // Now wait for isCaller to be determined
+  }, [socket]);
 
-    initMedia();
+  // 🟦 When caller/callee is known, then initialize WebRTC
+  useEffect(() => {
+    if (isCaller === null) return; // Wait until we know role
+    initWebRTC();
     setupSocketListeners();
+  }, [isCaller]);
 
-    return () => {
-      cleanup();
-    };
-  }, []);
+  // ----------------------------------------------------
+  // INIT MEDIA + PEER CONNECTION
+  // ----------------------------------------------------
+  const initWebRTC = async () => {
+    await initMedia();          // Get local camera
+    createPeer();               // Create RTCPeerConnection
+    attachTracks();             // Add tracks AFTER PC created
+  };
 
   const initMedia = async () => {
     localStreamRef.current = await navigator.mediaDevices.getUserMedia({
@@ -39,18 +51,10 @@ export default function CallRoom({ socket }) {
     });
 
     localVideo.current.srcObject = localStreamRef.current;
-
-    pcRef.current = createPeerConnection();
-
-    localStreamRef.current
-      .getTracks()
-      .forEach((track) =>
-        pcRef.current.addTrack(track, localStreamRef.current)
-      );
   };
 
-  const createPeerConnection = () => {
-    const pc = new RTCPeerConnection({
+  const createPeer = () => {
+    pcRef.current = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.relay.metered.ca:80" },
         {
@@ -76,7 +80,7 @@ export default function CallRoom({ socket }) {
       ],
     });
 
-    pc.onicecandidate = (event) => {
+    pcRef.current.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("ice-candidate", {
           roomId,
@@ -85,27 +89,34 @@ export default function CallRoom({ socket }) {
       }
     };
 
-    pc.ontrack = (event) => {
+    pcRef.current.ontrack = (event) => {
       remoteVideo.current.srcObject = event.streams[0];
     };
 
-    pc.onnegotiationneeded = async () => {
-      // Wait until isCaller has correct value
-      await new Promise((r) => setTimeout(r, 200));
-
+    // 🔥 Negotiation only for caller
+    pcRef.current.onnegotiationneeded = async () => {
       if (!isCaller) return;
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      console.log("📡 Caller creating offer...");
+      const offer = await pcRef.current.createOffer();
+      await pcRef.current.setLocalDescription(offer);
 
       socket.emit("offer", { roomId, sdp: offer });
     };
-
-    return pc;
   };
 
+  const attachTracks = () => {
+    localStreamRef.current.getTracks().forEach((track) => {
+      pcRef.current.addTrack(track, localStreamRef.current);
+    });
+  };
+
+  // ----------------------------------------------------
+  // SOCKET SIGNALING HANDLERS
+  // ----------------------------------------------------
   const setupSocketListeners = () => {
     socket.on("offer", async ({ sdp }) => {
+      console.log("📩 Offer received");
       await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
 
       const answer = await pcRef.current.createAnswer();
@@ -115,6 +126,7 @@ export default function CallRoom({ socket }) {
     });
 
     socket.on("answer", async ({ sdp }) => {
+      console.log("📩 Answer received");
       await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
     });
 
@@ -125,22 +137,15 @@ export default function CallRoom({ socket }) {
         console.error("ICE error:", err);
       }
     });
-
-    socket.on("room-joined", ({ participants }) => {
-      if (participants === 1) {
-        setIsCaller(true);
-        socket.emit("ready", roomId);
-      } else if (participants === 2) {
-        setIsCaller(false);
-        socket.emit("other-joined", roomId);
-      }
-    });
   };
 
+  // ----------------------------------------------------
+  // CLEANUP
+  // ----------------------------------------------------
   const cleanup = () => {
     if (pcRef.current) pcRef.current.close();
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
     }
   };
 
