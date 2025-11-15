@@ -8,6 +8,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 const Signup = () => {
   const navigate = useNavigate();
+  const BACKEND_URL = "https://sharenet-dehy.onrender.com";
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -42,7 +43,7 @@ const Signup = () => {
     }
 
     try {
-      const { data } = await axios.post('http://localhost:5000/api/users/register', {
+      const { data } = await axios.post(`${BACKEND_URL}/api/users/register`, {
         name: formData.name,
         email: formData.email,
         password: formData.password,

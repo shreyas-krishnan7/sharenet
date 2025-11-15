@@ -156,6 +156,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 const Login = () => {
   const navigate = useNavigate();
+  const BACKEND_URL = "https://sharenet-dehy.onrender.com";
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -179,7 +180,7 @@ const Login = () => {
 
     try {
       // Send login request to backend
-      const { data } = await axios.post('http://localhost:5000/api/users/login', formData);
+      const { data } = await axios.post(`${BACKEND_URL}/api/users/login`, formData);
 
       // Save token in local storage
       localStorage.setItem('userInfo', JSON.stringify({'name': data.name, 'token': data.token}));
