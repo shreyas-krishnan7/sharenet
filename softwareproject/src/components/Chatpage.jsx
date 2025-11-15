@@ -1,712 +1,117 @@
-// import React, { useState, useEffect, useRef } from "react";
-// import io from "socket.io-client";
-// import { useNavigate } from "react-router-dom";
-
-// export default function SharentChat() {
-//   const [socket, setSocket] = useState(null);
-//   const [onlineUsers, setOnlineUsers] = useState([]);
-//   const [selectedUser, setSelectedUser] = useState(null);
-//   const [messages, setMessages] = useState({});
-//   const [message, setMessage] = useState("");
-//   const [currentUser, setCurrentUser] = useState(null);
-//   const incomingFileRef = useRef(null);
-//   const navigate = useNavigate();
-//   const SOCKET_URL = "https://sharenet-dehy.onrender.com";
-
-//   // WebRTC Refs
-//   const pcRef = useRef(null);
-//   const dcRef = useRef(null);
-//   const targetPeerIdRef = useRef(null);
-//   const messagesEndRef = useRef(null);
-
-//   // Auto scroll to bottom
-//   const scrollToBottom = () => {
-//     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-//   };
-
-//   useEffect(() => {
-//     scrollToBottom();
-//   }, [messages]);
-
-//   // ✅ Initialize socket & user
-//   useEffect(() => {
-//     const storedUser = JSON.parse(localStorage.getItem("userInfo"));
-//     const me = {
-//       id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
-//       name: storedUser?.name || "Guest User",
-//       email: storedUser?.email || "guest@example.com",
-//       avatar:
-//         storedUser?.name
-//           ?.split(" ")
-//           .map((n) => n[0])
-//           .join("")
-//           .toUpperCase() || "GU",
-//     };
-
-//     setCurrentUser(me);
-
-//     // Connect socket
-//     const s = io(SOCKET_URL, {
-//       transports: ["websocket"],
-//     });
-//     setSocket(s);
-//     s.emit("join", me);
-
-//     // Listen for online users and remove self
-//     s.on("online-users", (users) => {
-//       const filtered = users.filter((u) => u.id !== me.id);
-//       setOnlineUsers(filtered);
-//     });
-
-//     // Receive offer (callee)
-//     // 📩 CHAT OFFER (callee)
-//     s.on("chat-offer", async ({ offer, from }) => {
-//       console.log("📩 Chat offer from:", from);
-//       createPeerConnection(from);
-//       await pcRef.current.setRemoteDescription(offer);
-//       const answer = await pcRef.current.createAnswer();
-//       await pcRef.current.setLocalDescription(answer);
-
-//       s.emit("chat-answer", { to: from, from: me.id, answer });
-//     });
-
-//     // 📥 CHAT ANSWER (caller)
-//     s.on("chat-answer", async ({ answer }) => {
-//       console.log("✅ Chat answer received");
-//       if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
-//     });
-
-//     // 🌍 CHAT ICE CANDIDATE
-//     s.on("chat-candidate", async ({ candidate, from }) => {
-//       if (candidate && pcRef.current) {
-//         try {
-//           await pcRef.current.addIceCandidate(candidate);
-//           console.log("🌍 Chat ICE added from:", from);
-//         } catch (err) {
-//           console.error("Error adding chat ICE candidate:", err);
-//         }
-//       }
-//     });
-
-//     s.on("connect", () => console.log("🟢 Connected to signaling server"));
-
-//     return () => {
-//       s.disconnect();
-//       cleanupPeerConnection();
-//     };
-//   }, []);
-
-//   // ✅ Create Peer Connection
-//   const createPeerConnection = (targetId) => {
-//     cleanupPeerConnection();
-
-//     const pc = new RTCPeerConnection({
-//       iceServers: [
-//         {
-//           urls: "stun:stun.relay.metered.ca:80",
-//         },
-//         {
-//           urls: "turn:global.relay.metered.ca:80",
-//           username: "99233f39212e9124c007bab2",
-//           credential: "1TiVAiSMvWI3b6ah",
-//         },
-//         {
-//           urls: "turn:global.relay.metered.ca:80?transport=tcp",
-//           username: "99233f39212e9124c007bab2",
-//           credential: "1TiVAiSMvWI3b6ah",
-//         },
-//         {
-//           urls: "turn:global.relay.metered.ca:443",
-//           username: "99233f39212e9124c007bab2",
-//           credential: "1TiVAiSMvWI3b6ah",
-//         },
-//         {
-//           urls: "turns:global.relay.metered.ca:443?transport=tcp",
-//           username: "99233f39212e9124c007bab2",
-//           credential: "1TiVAiSMvWI3b6ah",
-//         },
-//       ],
-//     });
-
-//     pcRef.current = pc;
-//     targetPeerIdRef.current = targetId;
-
-//     pc.onicecandidate = (e) => {
-//       if (e.candidate && socket) {
-//         socket.emit("chat-candidate", {
-//           to: targetPeerIdRef.current,
-//           from: currentUser?.id,
-//           candidate: e.candidate,
-//         });
-//       }
-//     };
-
-//     pc.ondatachannel = (event) => {
-//       console.log("📡 DataChannel received (callee)");
-//       hookDataChannel(event.channel);
-//     };
-
-//     pc.onconnectionstatechange = () => {
-//       console.log("🔄 Connection state:", pc.connectionState);
-//       if (["failed", "disconnected", "closed"].includes(pc.connectionState))
-//         cleanupPeerConnection();
-//     };
-//   };
-
-//   // ✅ Setup Data Channel
-//   const hookDataChannel = (channel) => {
-//     dcRef.current = channel;
-
-//     channel.onopen = () => console.log("✅ DataChannel open — ready to chat");
-
-//     channel.onmessage = (e) => {
-//       if (typeof e.data === "string") {
-//         try {
-//           const msg = JSON.parse(e.data);
-
-//           if (msg.type === "file-meta") {
-//             incomingFileRef.current = {
-//               name: msg.name,
-//               size: msg.size,
-//               mime: msg.mime,
-//               totalChunks: msg.totalChunks,
-//               chunks: [],
-//             };
-//             console.log("📩 Receiving file:", msg.name);
-//             return;
-//           }
-
-//           if (msg.type === "file-end" && incomingFileRef.current) {
-//             const file = incomingFileRef.current;
-//             const blob = new Blob(file.chunks, { type: file.mime });
-//             const url = URL.createObjectURL(blob);
-//             const now = new Date().toLocaleTimeString([], {
-//               hour: "2-digit",
-//               minute: "2-digit",
-//             });
-
-//             setMessages((prev) => ({
-//               ...prev,
-//               [targetPeerIdRef.current]: [
-//                 ...(prev[targetPeerIdRef.current] || []),
-//                 {
-//                   text: `📎 Received file: ${file.name}`,
-//                   fileURL: url,
-//                   isFile: true,
-//                   fileName: file.name,
-//                   time: now,
-//                   sender: targetPeerIdRef.current,
-//                 },
-//               ],
-//             }));
-
-//             console.log("✅ File received:", file.name);
-//             incomingFileRef.current = null;
-//             return;
-//           }
-//         } catch {
-//           // Handle normal text messages
-//           const text = e.data;
-//           const now = new Date().toLocaleTimeString([], {
-//             hour: "2-digit",
-//             minute: "2-digit",
-//           });
-//           const fromId = targetPeerIdRef.current;
-
-//           setMessages((prev) => ({
-//             ...prev,
-//             [fromId]: [
-//               ...(prev[fromId] || []),
-//               { text, time: now, sender: fromId },
-//             ],
-//           }));
-//         }
-//       } else if (e.data instanceof ArrayBuffer) {
-//         if (incomingFileRef.current) {
-//           incomingFileRef.current.chunks.push(e.data);
-//         }
-//       }
-//     };
-
-//     channel.onclose = () => console.log("❌ DataChannel closed");
-//   };
-
-//   // ✅ Start Call (Caller)
-//   const startCallWith = async (user) => {
-//     setSelectedUser(user);
-//     createPeerConnection(user.id);
-//     const dc = pcRef.current.createDataChannel("chat");
-//     hookDataChannel(dc);
-
-//     const offer = await pcRef.current.createOffer();
-//     await pcRef.current.setLocalDescription(offer);
-
-//     socket.emit("chat-offer", {
-//       to: user.id,
-//       from: currentUser?.id,
-//       offer,
-//     });
-//   };
-
-//   // ✅ Send Message
-//   const handleSendMessage = () => {
-//     if (!message.trim() || !selectedUser) return;
-//     const now = new Date().toLocaleTimeString([], {
-//       hour: "2-digit",
-//       minute: "2-digit",
-//     });
-//     const newMsg = { text: message, time: now, sender: currentUser?.id };
-
-//     if (dcRef.current && dcRef.current.readyState === "open") {
-//       dcRef.current.send(message);
-//     } else {
-//       console.warn("⚠️ DataChannel not open yet.");
-//     }
-
-//     setMessages((prev) => ({
-//       ...prev,
-//       [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
-//     }));
-//     setMessage("");
-//   };
-//   // 🧠 Handle File Selection & Sending
-//   const handleFileSelect = async (e) => {
-//     const file = e.target.files[0];
-//     if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
-//       alert("⚠️ DataChannel not ready or no file selected.");
-//       return;
-//     }
-
-//     const chunkSize = 16 * 1024; // 16KB
-//     const fileReader = new FileReader();
-
-//     fileReader.onload = async (event) => {
-//       const buffer = event.target.result;
-//       const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-
-//       // Send file metadata first
-//       dcRef.current.send(
-//         JSON.stringify({
-//           type: "file-meta",
-//           name: file.name,
-//           size: file.size,
-//           mime: file.type,
-//           totalChunks,
-//         })
-//       );
-
-//       // Send chunks
-//       let offset = 0;
-//       while (offset < buffer.byteLength) {
-//         const chunk = buffer.slice(offset, offset + chunkSize);
-//         dcRef.current.send(chunk);
-//         offset += chunkSize;
-//       }
-
-//       // Send end marker
-//       dcRef.current.send(JSON.stringify({ type: "file-end" }));
-
-//       console.log(`✅ File sent: ${file.name}`);
-//       e.target.value = null;
-
-//       // Display in sender chat
-//       const now = new Date().toLocaleTimeString([], {
-//         hour: "2-digit",
-//         minute: "2-digit",
-//       });
-//       const newMsg = {
-//         text: `📎 Sent file: ${file.name}`,
-//         time: now,
-//         sender: currentUser?.id,
-//         isFile: true,
-//         fileName: file.name,
-//       };
-//       setMessages((prev) => ({
-//         ...prev,
-//         [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
-//       }));
-//     };
-
-//     fileReader.readAsArrayBuffer(file);
-//   };
-
-//   const handleKeyPress = (e) => {
-//     if (e.key === "Enter" && !e.shiftKey) {
-//       e.preventDefault();
-//       handleSendMessage();
-//     }
-//   };
-
-//   const handleCallClick = async (user) => {
-//     try {
-//       // 1️⃣ Ask camera + mic permission BEFORE navigating
-//       const stream = await navigator.mediaDevices.getUserMedia({
-//         video: true,
-//         audio: true,
-//       });
-
-//       // 2️⃣ Save the stream for reuse on CallPage
-//       localStorage.setItem("localStreamAvailable", "true");
-
-//       // 3️⃣ Build navigation data
-//       const callData = {
-//         currentUser, // Caller
-//         targetUser: user, // Receiver
-//         socketUrl: SOCKET_URL, // Your deployed signaling server
-//       };
-
-//       // 4️⃣ Navigate to CallPage while sending call data
-//       navigate(`/call/${user.id}`, { state: callData });
-//     } catch (err) {
-//       console.error("Permission error:", err);
-//       alert("Camera/Microphone permission is required to start a call.");
-//     }
-//   };
-
-//   // 🧹 Cleanup
-//   const cleanupPeerConnection = () => {
-//     try {
-//       if (dcRef.current) dcRef.current.close();
-//       if (pcRef.current) pcRef.current.close();
-//       dcRef.current = null;
-//       pcRef.current = null;
-//       targetPeerIdRef.current = null;
-//     } catch (err) {
-//       console.error("Cleanup error:", err);
-//     }
-//   };
-
-//   return (
-//     <div className="flex h-screen w-full bg-gray-100">
-//       {/* Sidebar */}
-//       <div className="w-80 min-w-[280px] bg-white border-r border-gray-200 flex flex-col">
-//         <div className="p-6 border-b border-gray-200">
-//           <h1 className="text-3xl font-bold" style={{ color: "#e91359" }}>
-//             Sharenet
-//           </h1>
-//         </div>
-//         <div className="flex-1 overflow-y-auto p-4">
-//           <h2 className="text-xs font-semibold text-gray-500 uppercase mb-3 tracking-wide">
-//             Online Users ({onlineUsers.length})
-//           </h2>
-//           <div className="flex flex-col gap-1">
-//             {onlineUsers.map((user) => (
-//               <button
-//                 key={user.id}
-//                 onClick={() => startCallWith(user)}
-//                 className={`w-full flex items-center p-3 rounded-lg transition-all duration-200 hover:bg-gray-50 ${
-//                   selectedUser?.id === user.id
-//                     ? "border"
-//                     : "border border-transparent"
-//                 }`}
-//                 style={
-//                   selectedUser?.id === user.id
-//                     ? { backgroundColor: "#ffe8f0", borderColor: "#e91359" }
-//                     : {}
-//                 }
-//               >
-//                 <div className="relative flex-shrink-0">
-//                   <div
-//                     className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-sm"
-//                     style={{
-//                       background: "linear-gradient(135deg, #e91359, #ff4081)",
-//                     }}
-//                   >
-//                     {user.name
-//                       .split(" ")
-//                       .map((n) => n[0])
-//                       .join("")
-//                       .toUpperCase()}
-//                   </div>
-//                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-//                 </div>
-//                 <div className="ml-3 text-left flex-1 min-w-0">
-//                   <div className="font-medium text-gray-900 truncate">
-//                     {user.name}
-//                   </div>
-//                   <div className="text-sm text-green-600">Online</div>
-//                 </div>
-//               </button>
-//             ))}
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Chat Area */}
-//       <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
-//         {selectedUser ? (
-//           <>
-//             <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between flex-shrink-0">
-//               <div className="flex items-center">
-//                 <div
-//                   className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-//                   style={{
-//                     background: "linear-gradient(135deg, #e91359, #ff4081)",
-//                   }}
-//                 >
-//                   {selectedUser.name
-//                     .split(" ")
-//                     .map((n) => n[0])
-//                     .join("")
-//                     .toUpperCase()}
-//                 </div>
-//                 <div className="ml-3 flex-1 min-w-0">
-//                   <h2 className="font-semibold text-gray-900 truncate">
-//                     {selectedUser.name}
-//                   </h2>
-//                   <p className="text-sm text-green-600">
-//                     {dcRef.current?.readyState === "open"
-//                       ? "Connected"
-//                       : "Connecting..."}
-//                   </p>
-//                 </div>
-//               </div>
-
-//               {/* 📞 Call Button */}
-//               <button
-//                 onClick={() => handleCallClick(selectedUser)}
-//                 className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium"
-//               >
-//                 📞 Call
-//               </button>
-//             </div>
-
-//             <div className="flex-1 overflow-y-auto p-6">
-//               {messages[selectedUser.id]?.length > 0 ? (
-//                 <div className="flex flex-col gap-4">
-//                   {messages[selectedUser.id].map((msg, idx) => {
-//                     const isMine = msg.sender === currentUser?.id;
-//                     return (
-//                       <div
-//                         key={idx}
-//                         className={`flex w-full ${
-//                           isMine ? "justify-end" : "justify-start"
-//                         }`}
-//                       >
-//                         <div
-//                           className={`max-w-[70%] min-w-[100px] flex flex-col ${
-//                             isMine ? "items-end" : "items-start"
-//                           }`}
-//                         >
-//                           <div
-//                             className={`px-4 py-3 rounded-xl break-words ${
-//                               isMine
-//                                 ? "text-white rounded-br-sm"
-//                                 : "bg-gray-200 text-gray-900 rounded-bl-sm"
-//                             }`}
-//                             style={isMine ? { backgroundColor: "#e91359" } : {}}
-//                           >
-//                             {isMine && (
-//                               <strong className="block text-xs opacity-90 mb-1">
-//                                 You:
-//                               </strong>
-//                             )}
-//                             <span className="whitespace-pre-wrap break-words">
-//                               {msg.isFile ? (
-//                                 <a
-//                                   href={msg.fileURL || "#"}
-//                                   download={msg.fileName}
-//                                   className="text-blue-600 underline hover:text-blue-800"
-//                                 >
-//                                   {msg.text}
-//                                 </a>
-//                               ) : (
-//                                 msg.text
-//                               )}
-//                             </span>
-//                           </div>
-//                           <div
-//                             className={`text-xs text-gray-500 mt-1 px-1 ${
-//                               isMine ? "text-right" : "text-left"
-//                             }`}
-//                           >
-//                             {msg.time}
-//                           </div>
-//                         </div>
-//                       </div>
-//                     );
-//                   })}
-//                   <div ref={messagesEndRef} />
-//                 </div>
-//               ) : (
-//                 <div className="flex items-center justify-center h-full text-gray-400 text-center px-4">
-//                   <div>
-//                     <div className="text-6xl mb-4">💬</div>
-//                     <p className="text-lg">
-//                       Start a conversation with {selectedUser.name}
-//                     </p>
-//                   </div>
-//                 </div>
-//               )}
-//             </div>
-
-//             <div className="bg-white border-t border-gray-200 p-4 flex gap-3 flex-shrink-0">
-//               {/* Hidden file input */}
-//               <input
-//                 type="file"
-//                 id="fileInput"
-//                 className="hidden"
-//                 onChange={handleFileSelect}
-//               />
-
-//               {/* 📎 Attach Button */}
-//               <button
-//                 onClick={() => document.getElementById("fileInput").click()}
-//                 className="px-3 py-3 text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-100 transition-all duration-200 flex items-center justify-center"
-//                 title="Attach file"
-//               >
-//                 📎
-//               </button>
-
-//               {/* Message Input */}
-//               <input
-//                 type="text"
-//                 value={message}
-//                 onChange={(e) => setMessage(e.target.value)}
-//                 onKeyPress={handleKeyPress}
-//                 placeholder="Type a message..."
-//                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#e91359] focus:ring-2 focus:ring-[#e91359]/20 transition-all"
-//               />
-
-//               {/* Send Button */}
-//               <button
-//                 onClick={handleSendMessage}
-//                 className="px-6 py-3 text-white rounded-lg font-medium flex items-center gap-2 transition-all duration-200 hover:shadow-lg active:scale-95 flex-shrink-0"
-//                 style={{ backgroundColor: "#e91359" }}
-//               >
-//                 <svg
-//                   width="20"
-//                   height="20"
-//                   viewBox="0 0 24 24"
-//                   fill="none"
-//                   stroke="currentColor"
-//                   strokeWidth="2"
-//                   className="w-5 h-5"
-//                 >
-//                   <line x1="22" y1="2" x2="11" y2="13"></line>
-//                   <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-//                 </svg>
-//                 <span className="hidden sm:inline">Send</span>
-//               </button>
-//             </div>
-//           </>
-//         ) : (
-//           <div className="flex-1 flex items-center justify-center text-gray-400 text-center px-4">
-//             <div>
-//               <div className="text-6xl mb-4">💬</div>
-//               <p className="text-xl">Select a user to start chatting</p>
-//             </div>
-//           </div>
-//         )}
-//       </div>
-//     </div>
-//   );
-// }
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 
-export default function ChatPage() {
-  const SOCKET_URL = "https://sharenet-dehy.onrender.com";
-
+export default function SharentChat() {
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
-
   const [messages, setMessages] = useState({});
-  const [textMsg, setTextMsg] = useState("");
+  const [message, setMessage] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+  const incomingFileRef = useRef(null);
+  const navigate = useNavigate();
+  const SOCKET_URL = "https://sharenet-dehy.onrender.com";
 
-  // RTC refs
+  // WebRTC Refs
   const pcRef = useRef(null);
   const dcRef = useRef(null);
-  const incomingFileRef = useRef(null);
-  const pendingICE = useRef([]);
-  const msgQueue = useRef([]);
-
-  const targetPeerId = useRef(null);
+  const targetPeerIdRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  const navigate = useNavigate();
-
-  // Auto scroll
-  const scrollToBottom = () =>
+  // Auto scroll to bottom
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
-  useEffect(scrollToBottom, [messages]);
-
-  // ---------------------------
-  // Load user + init socket
-  // ---------------------------
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("userInfo"));
+    scrollToBottom();
+  }, [messages]);
+
+  // ✅ Initialize socket & user
+  useEffect(() => {
+    const storedUser = JSON.parse(localStorage.getItem("userInfo"));
     const me = {
-      id: saved?.email || `user_${Math.floor(Math.random() * 10000)}`,
-      name: saved?.name || "Guest User",
-      email: saved?.email,
+      id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
+      name: storedUser?.name || "Guest User",
+      email: storedUser?.email || "guest@example.com",
+      avatar:
+        storedUser?.name
+          ?.split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase() || "GU",
     };
+
     setCurrentUser(me);
 
-    const s = io(SOCKET_URL, { transports: ["websocket"] });
+    // Connect socket
+    const s = io(SOCKET_URL, {
+      transports: ["websocket"],
+    });
     setSocket(s);
-
     s.emit("join", me);
 
-    s.on("online-users", (list) => {
-      setOnlineUsers(list.filter((u) => u.id !== me.id));
+    // Listen for online users and remove self
+    s.on("online-users", (users) => {
+      const filtered = users.filter((u) => u.id !== me.id);
+      setOnlineUsers(filtered);
     });
 
-    // Incoming WebRTC OFFER
+    // Receive offer (callee)
+    // 📩 CHAT OFFER (callee)
     s.on("chat-offer", async ({ offer, from }) => {
-      console.log("📩 offer from:", from);
+      console.log("📩 Chat offer from:", from);
       createPeerConnection(from);
-
       await pcRef.current.setRemoteDescription(offer);
-
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
 
-      socket.emit("chat-answer", {
-        to: from,
-        from: currentUser.id,
-        answer,
-      });
+      s.emit("chat-answer", { to: from, from: me.id, answer });
     });
 
-    // Incoming ANSWER
+    // 📥 CHAT ANSWER (caller)
     s.on("chat-answer", async ({ answer }) => {
-      console.log("📩 answer received");
-      if (!pcRef.current) return;
-      await pcRef.current.setRemoteDescription(answer);
+      console.log("✅ Chat answer received");
+      if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
     });
 
-    // Incoming ICE candidate
-    s.on("chat-candidate", ({ candidate }) => {
-      if (!candidate) return;
-      if (pcRef.current) {
-        pcRef.current.addIceCandidate(candidate).catch((e) => {
-          pendingICE.current.push(candidate);
-        });
-      } else {
-        pendingICE.current.push(candidate);
+    // 🌍 CHAT ICE CANDIDATE
+    s.on("chat-candidate", async ({ candidate, from }) => {
+      if (candidate && pcRef.current) {
+        try {
+          await pcRef.current.addIceCandidate(candidate);
+          console.log("🌍 Chat ICE added from:", from);
+        } catch (err) {
+          console.error("Error adding chat ICE candidate:", err);
+        }
       }
     });
 
-    return () => s.disconnect();
+    s.on("connect", () => console.log("🟢 Connected to signaling server"));
+
+    return () => {
+      s.disconnect();
+      cleanupPeerConnection();
+    };
   }, []);
 
-  // ---------------------------
-  // Create PeerConnection
-  // ---------------------------
-  const createPeerConnection = (peerId) => {
-    cleanup();
-    targetPeerId.current = peerId;
+  // ✅ Create Peer Connection
+  const createPeerConnection = (targetId) => {
+    cleanupPeerConnection();
 
     const pc = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.relay.metered.ca:80" },
+        {
+          urls: "stun:stun.relay.metered.ca:80",
+        },
         {
           urls: "turn:global.relay.metered.ca:80",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
           username: "99233f39212e9124c007bab2",
           credential: "1TiVAiSMvWI3b6ah",
         },
@@ -715,307 +120,482 @@ export default function ChatPage() {
           username: "99233f39212e9124c007bab2",
           credential: "1TiVAiSMvWI3b6ah",
         },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
       ],
     });
 
+    pcRef.current = pc;
+    targetPeerIdRef.current = targetId;
+
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
+      if (e.candidate && socket) {
         socket.emit("chat-candidate", {
-          to: peerId,
-          from: currentUser.id,
+          to: targetPeerIdRef.current,
+          from: currentUser?.id,
           candidate: e.candidate,
         });
       }
     };
 
-    pc.ondatachannel = (e) => {
-      console.log("📡 incoming DataChannel");
-      setupDataChannel(e.channel);
+    pc.ondatachannel = (event) => {
+      console.log("📡 DataChannel received (callee)");
+      hookDataChannel(event.channel);
     };
 
     pc.onconnectionstatechange = () => {
-      console.log("🔄 PC state:", pc.connectionState);
+      console.log("🔄 Connection state:", pc.connectionState);
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState))
+        cleanupPeerConnection();
     };
-
-    pcRef.current = pc;
   };
 
-  // ---------------------------
-  // Setup DataChannel
-  // ---------------------------
-  const setupDataChannel = (dc) => {
-    dcRef.current = dc;
+  // ✅ Setup Data Channel
+  const hookDataChannel = (channel) => {
+    dcRef.current = channel;
 
-    dc.onopen = () => {
-      console.log("🟢 DataChannel OPEN");
-      msgQueue.current.forEach((msg) => dc.send(msg));
-      msgQueue.current = [];
-    };
+    channel.onopen = () => console.log("✅ DataChannel open — ready to chat");
 
-    dc.onmessage = handleDataMessage;
+    channel.onmessage = (e) => {
+      if (typeof e.data === "string") {
+        try {
+          const msg = JSON.parse(e.data);
 
-    dc.onclose = () => console.log("🔴 DataChannel closed");
-  };
+          if (msg.type === "file-meta") {
+            incomingFileRef.current = {
+              name: msg.name,
+              size: msg.size,
+              mime: msg.mime,
+              totalChunks: msg.totalChunks,
+              chunks: [],
+            };
+            console.log("📩 Receiving file:", msg.name);
+            return;
+          }
 
-  // ---------------------------
-  // Handle messages from DataChannel
-  // ---------------------------
-  const handleDataMessage = (e) => {
-    if (typeof e.data === "string") {
-      try {
-        const msg = JSON.parse(e.data);
+          if (msg.type === "file-end" && incomingFileRef.current) {
+            const file = incomingFileRef.current;
+            const blob = new Blob(file.chunks, { type: file.mime });
+            const url = URL.createObjectURL(blob);
+            const now = new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
 
-        if (msg.type === "file-meta") {
-          incomingFileRef.current = {
-            name: msg.name,
-            mime: msg.mime,
-            chunks: [],
-          };
-          return;
-        }
+            setMessages((prev) => ({
+              ...prev,
+              [targetPeerIdRef.current]: [
+                ...(prev[targetPeerIdRef.current] || []),
+                {
+                  text: `📎 Received file: ${file.name}`,
+                  fileURL: url,
+                  isFile: true,
+                  fileName: file.name,
+                  time: now,
+                  sender: targetPeerIdRef.current,
+                },
+              ],
+            }));
 
-        if (msg.type === "file-end") {
-          const f = incomingFileRef.current;
-          const blob = new Blob(f.chunks, { type: f.mime });
-          const url = URL.createObjectURL(blob);
-
-          pushMessage(targetPeerId.current, {
-            text: `📎 ${f.name}`,
-            isFile: true,
-            fileURL: url,
+            console.log("✅ File received:", file.name);
+            incomingFileRef.current = null;
+            return;
+          }
+        } catch {
+          // Handle normal text messages
+          const text = e.data;
+          const now = new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
           });
+          const fromId = targetPeerIdRef.current;
 
-          incomingFileRef.current = null;
-          return;
+          setMessages((prev) => ({
+            ...prev,
+            [fromId]: [
+              ...(prev[fromId] || []),
+              { text, time: now, sender: fromId },
+            ],
+          }));
         }
-      } catch (err) {
-        // Normal text message
+      } else if (e.data instanceof ArrayBuffer) {
+        if (incomingFileRef.current) {
+          incomingFileRef.current.chunks.push(e.data);
+        }
       }
+    };
 
-      pushMessage(targetPeerId.current, {
-        text: e.data,
-      });
-    } else if (e.data instanceof ArrayBuffer) {
-      // File chunk
-      incomingFileRef.current?.chunks.push(e.data);
-    }
+    channel.onclose = () => console.log("❌ DataChannel closed");
   };
 
-  // ---------------------------
-  // Push message to UI
-  // ---------------------------
-  const pushMessage = (peer, msg) => {
-    setMessages((prev) => {
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      return {
-        ...prev,
-        [peer]: [...(prev[peer] || []), { ...msg, time: now }],
-      };
-    });
-  };
-
-  // ---------------------------
-  // Start chat with selected user
-  // ---------------------------
-  const startChat = async (user) => {
+  // ✅ Start Call (Caller)
+  const startCallWith = async (user) => {
     setSelectedUser(user);
-
     createPeerConnection(user.id);
-
     const dc = pcRef.current.createDataChannel("chat");
-    setupDataChannel(dc);
+    hookDataChannel(dc);
 
     const offer = await pcRef.current.createOffer();
     await pcRef.current.setLocalDescription(offer);
 
     socket.emit("chat-offer", {
       to: user.id,
-      from: currentUser.id,
+      from: currentUser?.id,
       offer,
     });
   };
 
-  // ---------------------------
-  // Send text message
-  // ---------------------------
-  const sendMessage = () => {
-    if (!textMsg.trim()) return;
+  // ✅ Send Message
+  const handleSendMessage = () => {
+    if (!message.trim() || !selectedUser) return;
+    const now = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const newMsg = { text: message, time: now, sender: currentUser?.id };
 
-    const peer = selectedUser.id;
-
-    if (dcRef.current?.readyState === "open") {
-      dcRef.current.send(textMsg);
+    if (dcRef.current && dcRef.current.readyState === "open") {
+      dcRef.current.send(message);
     } else {
-      msgQueue.current.push(textMsg);
+      console.warn("⚠️ DataChannel not open yet.");
     }
 
-    pushMessage(peer, { text: textMsg, self: true });
-    setTextMsg("");
+    setMessages((prev) => ({
+      ...prev,
+      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+    }));
+    setMessage("");
   };
-
-  // ---------------------------
-  // File Sending
-  // ---------------------------
-  const handleFile = async (e) => {
+  // 🧠 Handle File Selection & Sending
+  const handleFileSelect = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-
-    if (!dcRef.current || dcRef.current.readyState !== "open") {
-      alert("Connection not ready.");
+    if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
+      alert("⚠️ DataChannel not ready or no file selected.");
       return;
     }
 
-    const CHUNK = 16 * 1024;
+    const chunkSize = 16 * 1024; // 16KB
+    const fileReader = new FileReader();
 
-    dcRef.current.send(
-      JSON.stringify({
-        type: "file-meta",
-        name: file.name,
-        mime: file.type,
-      })
-    );
+    fileReader.onload = async (event) => {
+      const buffer = event.target.result;
+      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
 
-    const buffer = await file.arrayBuffer();
-    let offset = 0;
+      // Send file metadata first
+      dcRef.current.send(
+        JSON.stringify({
+          type: "file-meta",
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          totalChunks,
+        })
+      );
 
-    while (offset < buffer.byteLength) {
-      const chunk = buffer.slice(offset, offset + CHUNK);
-      dcRef.current.send(chunk);
-      offset += CHUNK;
+      // Send chunks
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        dcRef.current.send(chunk);
+        offset += chunkSize;
+      }
+
+      // Send end marker
+      dcRef.current.send(JSON.stringify({ type: "file-end" }));
+
+      console.log(`✅ File sent: ${file.name}`);
+      e.target.value = null;
+
+      // Display in sender chat
+      const now = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const newMsg = {
+        text: `📎 Sent file: ${file.name}`,
+        time: now,
+        sender: currentUser?.id,
+        isFile: true,
+        fileName: file.name,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+      }));
+    };
+
+    fileReader.readAsArrayBuffer(file);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
-
-    dcRef.current.send(JSON.stringify({ type: "file-end" }));
-
-    pushMessage(selectedUser.id, {
-      text: `📎 Sent: ${file.name}`,
-      self: true,
-      isFile: true,
-    });
   };
 
-  // ---------------------------
-  // Cleanup PC + DC
-  // ---------------------------
-  const cleanup = () => {
+  const handleCallClick = async (user) => {
     try {
-      dcRef.current?.close();
-      pcRef.current?.close();
-    } catch {}
-    dcRef.current = null;
-    pcRef.current = null;
-    incomingFileRef.current = null;
-    pendingICE.current = [];
-    msgQueue.current = [];
+      // 1️⃣ Ask camera + mic permission BEFORE navigating
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      // 2️⃣ Save the stream for reuse on CallPage
+      localStorage.setItem("localStreamAvailable", "true");
+
+      // 3️⃣ Build navigation data
+      const callData = {
+        currentUser, // Caller
+        targetUser: user, // Receiver
+        socketUrl: SOCKET_URL, // Your deployed signaling server
+      };
+
+      // 4️⃣ Navigate to CallPage while sending call data
+      navigate(`/call/${user.id}`, { state: callData });
+    } catch (err) {
+      console.error("Permission error:", err);
+      alert("Camera/Microphone permission is required to start a call.");
+    }
   };
 
-  // ---------------------------
-  // UI
-  // ---------------------------
+  // 🧹 Cleanup
+  const cleanupPeerConnection = () => {
+    try {
+      if (dcRef.current) dcRef.current.close();
+      if (pcRef.current) pcRef.current.close();
+      dcRef.current = null;
+      pcRef.current = null;
+      targetPeerIdRef.current = null;
+    } catch (err) {
+      console.error("Cleanup error:", err);
+    }
+  };
+
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen w-full bg-gray-100">
       {/* Sidebar */}
-      <div className="w-72 border-r p-4">
-        <h1 className="text-2xl font-bold mb-4 text-pink-600">ShareNet</h1>
-
-        <h2 className="text-sm font-semibold mb-2">Online Users</h2>
-
-        {onlineUsers.map((u) => (
-          <button
-            key={u.id}
-            onClick={() => startChat(u)}
-            className={`block w-full p-3 rounded mb-2 text-left ${
-              selectedUser?.id === u.id ? "bg-pink-100" : "bg-gray-100"
-            }`}
-          >
-            {u.name}
-          </button>
-        ))}
+      <div className="w-80 min-w-[280px] bg-white border-r border-gray-200 flex flex-col">
+        <div className="p-6 border-b border-gray-200">
+          <h1 className="text-3xl font-bold" style={{ color: "#e91359" }}>
+            Sharenet
+          </h1>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase mb-3 tracking-wide">
+            Online Users ({onlineUsers.length})
+          </h2>
+          <div className="flex flex-col gap-1">
+            {onlineUsers.map((user) => (
+              <button
+                key={user.id}
+                onClick={() => startCallWith(user)}
+                className={`w-full flex items-center p-3 rounded-lg transition-all duration-200 hover:bg-gray-50 ${
+                  selectedUser?.id === user.id
+                    ? "border"
+                    : "border border-transparent"
+                }`}
+                style={
+                  selectedUser?.id === user.id
+                    ? { backgroundColor: "#ffe8f0", borderColor: "#e91359" }
+                    : {}
+                }
+              >
+                <div className="relative flex-shrink-0">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-sm"
+                    style={{
+                      background: "linear-gradient(135deg, #e91359, #ff4081)",
+                    }}
+                  >
+                    {user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                </div>
+                <div className="ml-3 text-left flex-1 min-w-0">
+                  <div className="font-medium text-gray-900 truncate">
+                    {user.name}
+                  </div>
+                  <div className="text-sm text-green-600">Online</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Chat Box */}
-      <div className="flex-1 flex flex-col">
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
         {selectedUser ? (
           <>
-            <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-semibold">{selectedUser.name}</h2>
+            <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                  style={{
+                    background: "linear-gradient(135deg, #e91359, #ff4081)",
+                  }}
+                >
+                  {selectedUser.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()}
+                </div>
+                <div className="ml-3 flex-1 min-w-0">
+                  <h2 className="font-semibold text-gray-900 truncate">
+                    {selectedUser.name}
+                  </h2>
+                  <p className="text-sm text-green-600">
+                    {dcRef.current?.readyState === "open"
+                      ? "Connected"
+                      : "Connecting..."}
+                  </p>
+                </div>
+              </div>
 
+              {/* 📞 Call Button */}
               <button
-                onClick={() => navigate(`/call/${selectedUser.id}`, { state: { currentUser, targetUser: selectedUser, socketUrl: SOCKET_URL } })}
-                className="bg-pink-600 text-white px-4 py-2 rounded"
+                onClick={() => handleCallClick(selectedUser)}
+                className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium"
               >
                 📞 Call
               </button>
             </div>
 
-            <div className="flex-1 p-4 overflow-y-auto">
-              {(messages[selectedUser.id] || []).map((m, i) => (
-                <div
-                  key={i}
-                  className={`mb-3 flex ${
-                    m.self ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`p-3 rounded-lg max-w-xs ${
-                      m.self ? "bg-pink-600 text-white" : "bg-gray-200"
-                    }`}
-                  >
-                    {m.isFile ? (
-                      <a
-                        href={m.fileURL}
-                        className="underline"
-                        download
+            <div className="flex-1 overflow-y-auto p-6">
+              {messages[selectedUser.id]?.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  {messages[selectedUser.id].map((msg, idx) => {
+                    const isMine = msg.sender === currentUser?.id;
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex w-full ${
+                          isMine ? "justify-end" : "justify-start"
+                        }`}
                       >
-                        {m.text}
-                      </a>
-                    ) : (
-                      m.text
-                    )}
-                    <div className="text-xs mt-1 opacity-70">{m.time}</div>
+                        <div
+                          className={`max-w-[70%] min-w-[100px] flex flex-col ${
+                            isMine ? "items-end" : "items-start"
+                          }`}
+                        >
+                          <div
+                            className={`px-4 py-3 rounded-xl break-words ${
+                              isMine
+                                ? "text-white rounded-br-sm"
+                                : "bg-gray-200 text-gray-900 rounded-bl-sm"
+                            }`}
+                            style={isMine ? { backgroundColor: "#e91359" } : {}}
+                          >
+                            {isMine && (
+                              <strong className="block text-xs opacity-90 mb-1">
+                                You:
+                              </strong>
+                            )}
+                            <span className="whitespace-pre-wrap break-words">
+                              {msg.isFile ? (
+                                <a
+                                  href={msg.fileURL || "#"}
+                                  download={msg.fileName}
+                                  className="text-blue-600 underline hover:text-blue-800"
+                                >
+                                  {msg.text}
+                                </a>
+                              ) : (
+                                msg.text
+                              )}
+                            </span>
+                          </div>
+                          <div
+                            className={`text-xs text-gray-500 mt-1 px-1 ${
+                              isMine ? "text-right" : "text-left"
+                            }`}
+                          >
+                            {msg.time}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400 text-center px-4">
+                  <div>
+                    <div className="text-6xl mb-4">💬</div>
+                    <p className="text-lg">
+                      Start a conversation with {selectedUser.name}
+                    </p>
                   </div>
                 </div>
-              ))}
-              <div ref={messagesEndRef} />
+              )}
             </div>
 
-            <div className="p-4 border-t flex gap-2">
+            <div className="bg-white border-t border-gray-200 p-4 flex gap-3 flex-shrink-0">
+              {/* Hidden file input */}
               <input
-                id="fileInput"
                 type="file"
+                id="fileInput"
                 className="hidden"
-                onChange={handleFile}
+                onChange={handleFileSelect}
               />
 
+              {/* 📎 Attach Button */}
               <button
                 onClick={() => document.getElementById("fileInput").click()}
-                className="px-3 py-2 bg-gray-200 rounded"
+                className="px-3 py-3 text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-100 transition-all duration-200 flex items-center justify-center"
+                title="Attach file"
               >
                 📎
               </button>
 
+              {/* Message Input */}
               <input
-                className="flex-1 border rounded p-2"
-                value={textMsg}
-                onChange={(e) => setTextMsg(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
                 placeholder="Type a message..."
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-[#e91359] focus:ring-2 focus:ring-[#e91359]/20 transition-all"
               />
 
+              {/* Send Button */}
               <button
-                onClick={sendMessage}
-                className="px-4 py-2 bg-pink-600 text-white rounded"
+                onClick={handleSendMessage}
+                className="px-6 py-3 text-white rounded-lg font-medium flex items-center gap-2 transition-all duration-200 hover:shadow-lg active:scale-95 flex-shrink-0"
+                style={{ backgroundColor: "#e91359" }}
               >
-                Send
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="w-5 h-5"
+                >
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span className="hidden sm:inline">Send</span>
               </button>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">
-            Select a user to start chatting
+          <div className="flex-1 flex items-center justify-center text-gray-400 text-center px-4">
+            <div>
+              <div className="text-6xl mb-4">💬</div>
+              <p className="text-xl">Select a user to start chatting</p>
+            </div>
           </div>
         )}
       </div>
