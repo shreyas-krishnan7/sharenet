@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import io from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 
-export default function SharentChat() {
-  const [socket, setSocket] = useState(null);
+export default function SharentChat({ socket }) {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState({});
   const [message, setMessage] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+
   const incomingFileRef = useRef(null);
   const navigate = useNavigate();
-  const SOCKET_URL = "https://sharenet-dehy.onrender.com";
 
   // WebRTC Refs
   const pcRef = useRef(null);
@@ -19,7 +18,7 @@ export default function SharentChat() {
   const targetPeerIdRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Auto scroll to bottom
+  // Auto scroll
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -28,8 +27,10 @@ export default function SharentChat() {
     scrollToBottom();
   }, [messages]);
 
-  // ✅ Initialize socket & user
+  // ✅ Initialize user ONLY (socket already exists)
   useEffect(() => {
+    if (!socket) return;
+
     const storedUser = JSON.parse(localStorage.getItem("userInfo"));
     const me = {
       id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
@@ -45,83 +46,83 @@ export default function SharentChat() {
 
     setCurrentUser(me);
 
-    // Connect socket
-    const s = io(SOCKET_URL, {
-      transports: ["websocket"],
-    });
-    setSocket(s);
-    s.emit("join", me);
+    // Join socket room
+    socket.emit("join", me);
 
-    // Listen for online users and remove self
-    s.on("online-users", (users) => {
+    // Online users
+    socket.on("online-users", (users) => {
       const filtered = users.filter((u) => u.id !== me.id);
       setOnlineUsers(filtered);
     });
 
-    // Receive offer (callee)
-    // 📩 CHAT OFFER (callee)
-    s.on("chat-offer", async ({ offer, from }) => {
-      console.log("📩 Chat offer from:", from);
+    // ----------------------
+    // CHAT SIGNALING
+    // ----------------------
+
+    socket.on("chat-offer", async ({ offer, from }) => {
       createPeerConnection(from);
       await pcRef.current.setRemoteDescription(offer);
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
-
-      s.emit("chat-answer", { to: from, from: me.id, answer });
+      socket.emit("chat-answer", { to: from, from: me.id, answer });
     });
 
-    // 📥 CHAT ANSWER (caller)
-    s.on("chat-answer", async ({ answer }) => {
-      console.log("✅ Chat answer received");
+    socket.on("chat-answer", async ({ answer }) => {
       if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
     });
 
-    // 🌍 CHAT ICE CANDIDATE
-    s.on("chat-candidate", async ({ candidate, from }) => {
+    socket.on("chat-candidate", async ({ candidate }) => {
       if (candidate && pcRef.current) {
-        try {
-          await pcRef.current.addIceCandidate(candidate);
-          console.log("🌍 Chat ICE added from:", from);
-        } catch (err) {
-          console.error("Error adding chat ICE candidate:", err);
-        }
+        await pcRef.current.addIceCandidate(candidate);
       }
     });
 
-    s.on("connect", () => console.log("🟢 Connected to signaling server"));
+    // ----------------------
+    // CALL SIGNALING
+    // ----------------------
+
+    socket.on("incoming-call", ({ roomId }) => {
+      setIncomingCall({ roomId });
+    });
 
     return () => {
-      s.disconnect();
       cleanupPeerConnection();
     };
-  }, []);
+  }, [socket]);
 
-  // ✅ Create Peer Connection
+  // ---------------------------
+  // 📞 Start Call
+  // ---------------------------
+  const startCall = (receiver) => {
+    if (!socket || !receiver?.id) return;
+
+    const roomId = `${socket.id}-${receiver.id}`;
+    socket.emit("call-user", { receiverId: receiver.id, roomId });
+    navigate(`/call/${roomId}`);
+  };
+
+  const acceptCall = () => {
+    navigate(`/call/${incomingCall.roomId}`);
+    setIncomingCall(null);
+  };
+
+  // ---------------------------
+  // WebRTC Functions
+  // ---------------------------
+
   const createPeerConnection = (targetId) => {
     cleanupPeerConnection();
 
     const pc = new RTCPeerConnection({
       iceServers: [
-        {
-          urls: "stun:stun.relay.metered.ca:80",
-        },
+        { urls: "stun:stun.relay.metered.ca:80" },
         {
           urls: "turn:global.relay.metered.ca:80",
           username: "99233f39212e9124c007bab2",
           credential: "1TiVAiSMvWI3b6ah",
         },
         {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "99233f39212e9124c007bab2",
-          credential: "1TiVAiSMvWI3b6ah",
-        },
-        {
           urls: "turn:global.relay.metered.ca:443",
-          username: "99233f39212e9124c007bab2",
-          credential: "1TiVAiSMvWI3b6ah",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
           username: "99233f39212e9124c007bab2",
           credential: "1TiVAiSMvWI3b6ah",
         },
@@ -132,106 +133,45 @@ export default function SharentChat() {
     targetPeerIdRef.current = targetId;
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && socket) {
+      if (e.candidate) {
         socket.emit("chat-candidate", {
-          to: targetPeerIdRef.current,
+          to: targetId,
           from: currentUser?.id,
           candidate: e.candidate,
         });
       }
     };
 
-    pc.ondatachannel = (event) => {
-      console.log("📡 DataChannel received (callee)");
-      hookDataChannel(event.channel);
-    };
+    pc.ondatachannel = (event) => hookDataChannel(event.channel);
 
     pc.onconnectionstatechange = () => {
-      console.log("🔄 Connection state:", pc.connectionState);
-      if (["failed", "disconnected", "closed"].includes(pc.connectionState))
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
         cleanupPeerConnection();
+      }
     };
   };
 
-  // ✅ Setup Data Channel
   const hookDataChannel = (channel) => {
     dcRef.current = channel;
 
-    channel.onopen = () => console.log("✅ DataChannel open — ready to chat");
-
     channel.onmessage = (e) => {
-      if (typeof e.data === "string") {
-        try {
-          const msg = JSON.parse(e.data);
+      const now = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 
-          if (msg.type === "file-meta") {
-            incomingFileRef.current = {
-              name: msg.name,
-              size: msg.size,
-              mime: msg.mime,
-              totalChunks: msg.totalChunks,
-              chunks: [],
-            };
-            console.log("📩 Receiving file:", msg.name);
-            return;
-          }
+      const fromId = targetPeerIdRef.current;
 
-          if (msg.type === "file-end" && incomingFileRef.current) {
-            const file = incomingFileRef.current;
-            const blob = new Blob(file.chunks, { type: file.mime });
-            const url = URL.createObjectURL(blob);
-            const now = new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-
-            setMessages((prev) => ({
-              ...prev,
-              [targetPeerIdRef.current]: [
-                ...(prev[targetPeerIdRef.current] || []),
-                {
-                  text: `📎 Received file: ${file.name}`,
-                  fileURL: url,
-                  isFile: true,
-                  fileName: file.name,
-                  time: now,
-                  sender: targetPeerIdRef.current,
-                },
-              ],
-            }));
-
-            console.log("✅ File received:", file.name);
-            incomingFileRef.current = null;
-            return;
-          }
-        } catch {
-          // Handle normal text messages
-          const text = e.data;
-          const now = new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-          const fromId = targetPeerIdRef.current;
-
-          setMessages((prev) => ({
-            ...prev,
-            [fromId]: [
-              ...(prev[fromId] || []),
-              { text, time: now, sender: fromId },
-            ],
-          }));
-        }
-      } else if (e.data instanceof ArrayBuffer) {
-        if (incomingFileRef.current) {
-          incomingFileRef.current.chunks.push(e.data);
-        }
-      }
+      setMessages((prev) => ({
+        ...prev,
+        [fromId]: [
+          ...(prev[fromId] || []),
+          { text: e.data, time: now, sender: fromId },
+        ],
+      }));
     };
-
-    channel.onclose = () => console.log("❌ DataChannel closed");
   };
 
-  // ✅ Start Call (Caller)
   const startCallWith = async (user) => {
     setSelectedUser(user);
     createPeerConnection(user.id);
@@ -248,154 +188,37 @@ export default function SharentChat() {
     });
   };
 
-  // ✅ Send Message
   const handleSendMessage = () => {
     if (!message.trim() || !selectedUser) return;
+
     const now = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const newMsg = { text: message, time: now, sender: currentUser?.id };
 
-    if (dcRef.current && dcRef.current.readyState === "open") {
+    if (dcRef.current?.readyState === "open") {
       dcRef.current.send(message);
-    } else {
-      console.warn("⚠️ DataChannel not open yet.");
     }
 
     setMessages((prev) => ({
       ...prev,
-      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+      [selectedUser.id]: [
+        ...(prev[selectedUser.id] || []),
+        { text: message, time: now, sender: currentUser?.id },
+      ],
     }));
+
     setMessage("");
   };
-  // 🧠 Handle File Selection & Sending
-  const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
-      alert("⚠️ DataChannel not ready or no file selected.");
-      return;
-    }
 
-    const chunkSize = 16 * 1024; // 16KB
-    const fileReader = new FileReader();
-
-    fileReader.onload = async (event) => {
-      const buffer = event.target.result;
-      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-
-      // Send file metadata first
-      dcRef.current.send(
-        JSON.stringify({
-          type: "file-meta",
-          name: file.name,
-          size: file.size,
-          mime: file.type,
-          totalChunks,
-        })
-      );
-
-      // Send chunks
-      let offset = 0;
-      while (offset < buffer.byteLength) {
-        const chunk = buffer.slice(offset, offset + chunkSize);
-        dcRef.current.send(chunk);
-        offset += chunkSize;
-      }
-
-      // Send end marker
-      dcRef.current.send(JSON.stringify({ type: "file-end" }));
-
-      console.log(`✅ File sent: ${file.name}`);
-      e.target.value = null;
-
-      // Display in sender chat
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const newMsg = {
-        text: `📎 Sent file: ${file.name}`,
-        time: now,
-        sender: currentUser?.id,
-        isFile: true,
-        fileName: file.name,
-      };
-      setMessages((prev) => ({
-        ...prev,
-        [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
-      }));
-    };
-
-    fileReader.readAsArrayBuffer(file);
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-  const [incomingCall, setIncomingCall] = useState(null);
-
-const startCall = (receiverId) => {
-  const roomId = `${socket.id}-${receiverId}`;
-  socket.emit("call-user", { receiverId, roomId });
-  navigate(`/call/${roomId}`);
-};
-
-useEffect(() => {
-  if (!socket) return;
-
-  socket.on("incoming-call", ({ roomId }) => {
-    setIncomingCall({ roomId });
-  });
-}, [socket]);
-
-const acceptCall = () => {
-  navigate(`/call/${incomingCall.roomId}`);
-  setIncomingCall(null);
-};
-
-
-
-  // const handleCallClick = async (user) => {
-  //   try {
-  //     // 1️⃣ Ask camera + mic permission BEFORE navigating
-  //     const stream = await navigator.mediaDevices.getUserMedia({
-  //       video: true,
-  //       audio: true,
-  //     });
-
-  //     // 2️⃣ Save the stream for reuse on CallPage
-  //     localStorage.setItem("localStreamAvailable", "true");
-
-  //     // 3️⃣ Build navigation data
-  //     const callData = {
-  //       currentUser, // Caller
-  //       targetUser: user, // Receiver
-  //       socketUrl: SOCKET_URL, // Your deployed signaling server
-  //     };
-
-  //     // 4️⃣ Navigate to CallPage while sending call data
-  //     navigate(`/call/${user.id}`, { state: callData });
-  //   } catch (err) {
-  //     console.error("Permission error:", err);
-  //     alert("Camera/Microphone permission is required to start a call.");
-  //   }
-  // };
-
-  // 🧹 Cleanup
   const cleanupPeerConnection = () => {
     try {
-      if (dcRef.current) dcRef.current.close();
-      if (pcRef.current) pcRef.current.close();
-      dcRef.current = null;
-      pcRef.current = null;
-      targetPeerIdRef.current = null;
-    } catch (err) {
-      console.error("Cleanup error:", err);
-    }
+      dcRef.current?.close();
+      pcRef.current?.close();
+    } catch {}
+    dcRef.current = null;
+    pcRef.current = null;
+    targetPeerIdRef.current = null;
   };
 
   return (
