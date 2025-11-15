@@ -21,16 +21,22 @@ export default function CallRoom({ socket }) {
     socket.emit("join-call", { roomId });
 
     // Server tells how many participants are present
-    socket.on("room-joined", ({ participants }) => {
+    const handleRoomJoined = ({ participants }) => {
       console.log("👥 Participants in room:", participants);
 
       if (participants === 1) {
-        setIsCaller(true);   // first user
+        setIsCaller(true); // first user
       } else if (participants === 2) {
-        setIsCaller(false);  // second user
+        setIsCaller(false); // second user
       }
-    });
-  }, [socket]);
+    };
+
+    socket.on("room-joined", handleRoomJoined);
+
+    return () => {
+      socket.off("room-joined", handleRoomJoined);
+    };
+  }, [socket, roomId]);
 
   // ---------------------------------------------
   // WHEN CALLER/CALLEE ROLE IS KNOWN → SETUP WEBRTC
@@ -40,17 +46,42 @@ export default function CallRoom({ socket }) {
 
     console.log("🎯 Role decided:", isCaller ? "Caller" : "Callee");
 
-    initWebRTC();
-    setupSocketListeners();
+    // set up webRTC and listeners
+    (async () => {
+      await initWebRTC();
+      setupSocketListeners();
+    })();
+
+    // cleanup listeners and connection on unmount or role change
+    return () => {
+      cleanup();
+      socket.off("offer");
+      socket.off("answer");
+      socket.off("ice-candidate");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCaller]);
 
   // ---------------------------------------------
   // INIT MEDIA + PEER CONNECTION
   // ---------------------------------------------
   const initWebRTC = async () => {
-    await initMedia();   // get camera
-    createPeer();        // create RTCPeerConnection
-    attachTracks();      // add tracks after creating PC
+    await initMedia(); // get camera
+    createPeer(); // create RTCPeerConnection
+    attachTracks(); // add tracks after creating PC
+
+    // <-- FORCED OFFER: some browsers (mobile) don't trigger negotiationneeded reliably.
+    // If we're the caller, create and send the offer now (guaranteed).
+    if (isCaller) {
+      try {
+        console.log("📡 Caller forcing offer creation...");
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
+        socket.emit("offer", { roomId, sdp: offer });
+      } catch (err) {
+        console.error("Error forcing offer:", err);
+      }
+    }
   };
 
   const initMedia = async () => {
@@ -60,7 +91,7 @@ export default function CallRoom({ socket }) {
         audio: true,
       });
 
-      localVideo.current.srcObject = localStreamRef.current;
+      if (localVideo.current) localVideo.current.srcObject = localStreamRef.current;
       console.log("📷 Local stream ready");
     } catch (err) {
       console.error("Media error:", err);
@@ -96,7 +127,7 @@ export default function CallRoom({ socket }) {
 
     // ICE candidate event
     pcRef.current.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event?.candidate) {
         socket.emit("ice-candidate", {
           roomId,
           candidate: event.candidate,
@@ -107,22 +138,25 @@ export default function CallRoom({ socket }) {
     // Remote stream arrives
     pcRef.current.ontrack = (event) => {
       console.log("🎥 Remote track received");
-      remoteVideo.current.srcObject = event.streams[0];
+      if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0];
     };
 
-    // Caller creates offer AFTER negotiation triggers
+    // Keep onnegotiationneeded as a fallback (some browsers do fire it)
     pcRef.current.onnegotiationneeded = async () => {
       if (!isCaller) return;
-
-      console.log("📡 Caller creating offer...");
-      const offer = await pcRef.current.createOffer();
-      await pcRef.current.setLocalDescription(offer);
-
-      socket.emit("offer", { roomId, sdp: offer });
+      try {
+        console.log("📡 onnegotiationneeded fired - caller creating offer...");
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
+        socket.emit("offer", { roomId, sdp: offer });
+      } catch (err) {
+        console.error("Negotiation error:", err);
+      }
     };
   };
 
   const attachTracks = () => {
+    if (!localStreamRef.current || !pcRef.current) return;
     localStreamRef.current.getTracks().forEach((track) => {
       pcRef.current.addTrack(track, localStreamRef.current);
     });
@@ -133,66 +167,114 @@ export default function CallRoom({ socket }) {
   // ---------------------------------------------
   const setupSocketListeners = () => {
     // OFFER RECEIVED (callee)
-    socket.on("offer", async ({ sdp }) => {
-      console.log("📩 Offer received from caller");
+    const handleOffer = async ({ sdp }) => {
+      try {
+        console.log("📩 Offer received from caller");
 
-      await pcRef.current.setRemoteDescription(
-        new RTCSessionDescription(sdp)
-      );
+        // ensure peer exists
+        if (!pcRef.current) createPeer();
 
-      // Process queued ICE candidates
-      while (pendingCandidates.current.length > 0) {
-        const candidate = pendingCandidates.current.shift();
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+        // Process queued ICE candidates (that arrived early)
+        while (pendingCandidates.current.length > 0) {
+          const candidate = pendingCandidates.current.shift();
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (err) {
+            console.warn("Failed adding queued candidate:", err);
+          }
+        }
+
+        const answer = await pcRef.current.createAnswer();
+        await pcRef.current.setLocalDescription(answer);
+
+        socket.emit("answer", { roomId, sdp: answer });
+      } catch (err) {
+        console.error("Error handling offer:", err);
       }
-
-      const answer = await pcRef.current.createAnswer();
-      await pcRef.current.setLocalDescription(answer);
-
-      socket.emit("answer", { roomId, sdp: answer });
-    });
+    };
 
     // ANSWER RECEIVED (caller)
-    socket.on("answer", async ({ sdp }) => {
-      console.log("📩 Answer received from callee");
+    const handleAnswer = async ({ sdp }) => {
+      try {
+        console.log("📩 Answer received from callee");
 
-      await pcRef.current.setRemoteDescription(
-        new RTCSessionDescription(sdp)
-      );
+        if (!pcRef.current) {
+          console.warn("pcRef missing when answer arrived — creating peer");
+          createPeer();
+        }
 
-      // Process queued ICE candidates
-      while (pendingCandidates.current.length > 0) {
-        const candidate = pendingCandidates.current.shift();
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+        // Process queued ICE candidates
+        while (pendingCandidates.current.length > 0) {
+          const candidate = pendingCandidates.current.shift();
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (err) {
+            console.warn("Failed adding queued candidate:", err);
+          }
+        }
+      } catch (err) {
+        console.error("Error handling answer:", err);
       }
-    });
+    };
 
     // ICE RECEIVED
-    socket.on("ice-candidate", async ({ candidate }) => {
-      const pc = pcRef.current;
-      if (!pc) return;
-
-      if (!pc.remoteDescription) {
-        pendingCandidates.current.push(candidate);
-        return;
-      }
-
+    const handleIce = async ({ candidate }) => {
       try {
+        const pc = pcRef.current;
+        if (!pc) {
+          // pc not ready — queue the candidate
+          pendingCandidates.current.push(candidate);
+          return;
+        }
+
+        if (!pc.remoteDescription || !pc.remoteDescription.type) {
+          // remote description not set yet — queue
+          pendingCandidates.current.push(candidate);
+          return;
+        }
+
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
         console.error("❌ ICE error:", err);
       }
-    });
+    };
+
+    socket.on("offer", handleOffer);
+    socket.on("answer", handleAnswer);
+    socket.on("ice-candidate", handleIce);
   };
 
   // ---------------------------------------------
   // CLEANUP
   // ---------------------------------------------
   const cleanup = () => {
-    if (pcRef.current) pcRef.current.close();
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
+    try {
+      if (pcRef.current) {
+        pcRef.current.ontrack = null;
+        pcRef.current.onicecandidate = null;
+        pcRef.current.onnegotiationneeded = null;
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+    } catch (e) {
+      console.warn("Error closing pc:", e);
     }
+
+    if (localStreamRef.current) {
+      try {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        console.warn("Error stopping tracks:", e);
+      }
+      localStreamRef.current = null;
+    }
+
+    // clear pending candidates
+    pendingCandidates.current = [];
   };
 
   return (
