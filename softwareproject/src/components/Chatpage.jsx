@@ -99,33 +99,32 @@ export default function SharentChat() {
     cleanupPeerConnection();
 
     const pc = new RTCPeerConnection({
-   iceServers: [
-      {
-        urls: "stun:stun.relay.metered.ca:80",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80",
-        username: "99233f39212e9124c007bab2",
-        credential: "1TiVAiSMvWI3b6ah",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username: "99233f39212e9124c007bab2",
-        credential: "1TiVAiSMvWI3b6ah",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:443",
-        username: "99233f39212e9124c007bab2",
-        credential: "1TiVAiSMvWI3b6ah",
-      },
-      {
-        urls: "turns:global.relay.metered.ca:443?transport=tcp",
-        username: "99233f39212e9124c007bab2",
-        credential: "1TiVAiSMvWI3b6ah",
-      },
-  ],
-});
-
+      iceServers: [
+        {
+          urls: "stun:stun.relay.metered.ca:80",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "99233f39212e9124c007bab2",
+          credential: "1TiVAiSMvWI3b6ah",
+        },
+      ],
+    });
 
     pcRef.current = pc;
     targetPeerIdRef.current = targetId;
@@ -338,25 +337,27 @@ export default function SharentChat() {
 
   const handleCallClick = async (user) => {
   try {
-    // Ask permission before navigating
+    // 1️⃣ Ask camera + mic permission BEFORE navigating
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
     });
 
-    // Build the navigation state
+    // 2️⃣ Save the stream for reuse on CallPage
+    localStorage.setItem("localStreamAvailable", "true");
+
+    // 3️⃣ Build navigation data
     const callData = {
-      currentUser,       // YOU (caller)
-      targetUser: user,  // Selected user
+      currentUser,        // Caller
+      targetUser: user,   // Receiver
       socketUrl: SOCKET_URL, // Your deployed signaling server
     };
 
-    // Navigate to call page and pass call data
+    // 4️⃣ Navigate to CallPage while sending call data
     navigate(`/call/${user.id}`, { state: callData });
-
   } catch (err) {
     console.error("Permission error:", err);
-    alert("Camera/Microphone access is required to start a call.");
+    alert("Camera/Microphone permission is required to start a call.");
   }
 };
 
@@ -463,7 +464,7 @@ export default function SharentChat() {
               {/* 📞 Call Button */}
               <button
                 onClick={() => handleCallClick(selectedUser)}
-                className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium"
               >
                 📞 Call
               </button>
