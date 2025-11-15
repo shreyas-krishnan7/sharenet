@@ -336,32 +336,54 @@ export default function SharentChat() {
       handleSendMessage();
     }
   };
+  const [incomingCall, setIncomingCall] = useState(null);
 
-  const handleCallClick = async (user) => {
-    try {
-      // 1️⃣ Ask camera + mic permission BEFORE navigating
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
+const startCall = (receiverId) => {
+  const roomId = `${socket.id}-${receiverId}`;
+  socket.emit("call-user", { receiverId, roomId });
+  navigate(`/call/${roomId}`);
+};
 
-      // 2️⃣ Save the stream for reuse on CallPage
-      localStorage.setItem("localStreamAvailable", "true");
+useEffect(() => {
+  if (!socket) return;
 
-      // 3️⃣ Build navigation data
-      const callData = {
-        currentUser, // Caller
-        targetUser: user, // Receiver
-        socketUrl: SOCKET_URL, // Your deployed signaling server
-      };
+  socket.on("incoming-call", ({ roomId }) => {
+    setIncomingCall({ roomId });
+  });
+}, [socket]);
 
-      // 4️⃣ Navigate to CallPage while sending call data
-      navigate(`/call/${user.id}`, { state: callData });
-    } catch (err) {
-      console.error("Permission error:", err);
-      alert("Camera/Microphone permission is required to start a call.");
-    }
-  };
+const acceptCall = () => {
+  navigate(`/call/${incomingCall.roomId}`);
+  setIncomingCall(null);
+};
+
+
+
+  // const handleCallClick = async (user) => {
+  //   try {
+  //     // 1️⃣ Ask camera + mic permission BEFORE navigating
+  //     const stream = await navigator.mediaDevices.getUserMedia({
+  //       video: true,
+  //       audio: true,
+  //     });
+
+  //     // 2️⃣ Save the stream for reuse on CallPage
+  //     localStorage.setItem("localStreamAvailable", "true");
+
+  //     // 3️⃣ Build navigation data
+  //     const callData = {
+  //       currentUser, // Caller
+  //       targetUser: user, // Receiver
+  //       socketUrl: SOCKET_URL, // Your deployed signaling server
+  //     };
+
+  //     // 4️⃣ Navigate to CallPage while sending call data
+  //     navigate(`/call/${user.id}`, { state: callData });
+  //   } catch (err) {
+  //     console.error("Permission error:", err);
+  //     alert("Camera/Microphone permission is required to start a call.");
+  //   }
+  // };
 
   // 🧹 Cleanup
   const cleanupPeerConnection = () => {
@@ -464,10 +486,10 @@ export default function SharentChat() {
 
               {/* 📞 Call Button */}
               <button
-                onClick={() => handleCallClick(selectedUser)}
-                className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium"
+                className="p-2 bg-blue-600 text-white rounded"
+                onClick={() => startCall(selectedUser)}
               >
-                📞 Call
+                📞
               </button>
             </div>
 
@@ -599,6 +621,24 @@ export default function SharentChat() {
           </div>
         )}
       </div>
+      {/* 📞 Incoming Call Popup */}
+      {incomingCall && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-lg text-center animate-fadeIn">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Incoming Call...
+            </h2>
+
+            <button
+              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg mr-3"
+              onClick={acceptCall}
+            >
+              Accept
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

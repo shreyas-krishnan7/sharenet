@@ -18,7 +18,7 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/chatpage" element={<Chatpage />} />
-        <Route path="/call" element={<CallPage />} />
+        <Route path="/call/:roomId" element={<CallRoom socket={socket} />} />
 
       </Routes>
     </Router>
