@@ -97,17 +97,10 @@ io.on("connection", (socket) => {
   const room = io.sockets.adapter.rooms.get(roomId);
   const participants = room ? room.size : 0;
 
-  console.log(`Room ${roomId} participants:`, participants);
+  console.log(`👥 Room ${roomId} participants:`, participants);
 
   // Notify both users of room count
   io.to(roomId).emit("room-joined", { participants });
-});
-  socket.on("ready", (roomId) => {
-  socket.to(roomId).emit("ready");
-});
-
-socket.on("other-joined", (roomId) => {
-  socket.to(roomId).emit("other-joined");
 });
 
   socket.on("offer", ({ roomId, sdp }) => {
