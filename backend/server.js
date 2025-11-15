@@ -15,7 +15,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://sharenet-ashen.vercel.app", // your Vercel frontend
+      "https://sharenet-ashen.vercel.app",
       "http://localhost:5173",
     ],
     methods: ["GET", "POST", "PUT", "DELETE"],
@@ -38,30 +38,30 @@ const server = createServer(app);
 // ---- SOCKET.IO SIGNALLING ---- //
 const io = new Server(server, {
   cors: {
-    origin: "*", // Expand later to limit origins
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
 let onlineUsers = {};
 
-// ---- SOCKET HANDLERS ---- //
+// ============================================================
+// 🔵 SOCKET HANDLERS
+// ============================================================
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  // A user joins the platform
+  // A user joins platform
   socket.on("join", (user) => {
     onlineUsers[user.id] = { ...user, socketId: socket.id };
     console.log("📌 User joined:", user);
     io.emit("online-users", Object.values(onlineUsers));
   });
 
-  // ------------------------------------------------------------
-  // 🔹 CHAT SIGNALING (DataChannel Only — text + file sharing)
-  // ------------------------------------------------------------
-
+  // ============================================================
+  // 🔹 CHAT SIGNALING (DataChannel Only)
+  // ============================================================
   socket.on("chat-offer", ({ to, from, offer }) => {
-    console.log(`💬 Chat Offer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
       io.to(target.socketId).emit("chat-offer", { offer, from });
@@ -69,7 +69,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("chat-answer", ({ to, from, answer }) => {
-    console.log(`💬 Chat Answer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
       io.to(target.socketId).emit("chat-answer", { answer, from });
@@ -83,12 +82,46 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ------------------------------------------------------------
-  // 🔹 CALL SIGNALING (Audio/Video WebRTC)
-  // ------------------------------------------------------------
+  // ============================================================
+  // 🔹 **NEW: WebRTC Call Signaling for 1-to-1 Video Calls**
+  // ============================================================
 
+  // Step 1: Caller requests call
+  socket.on("call-user", ({ receiverId, roomId }) => {
+    const target = onlineUsers[receiverId];
+    console.log(`📞 Call Request: ${socket.id} → ${receiverId} (room ${roomId})`);
+    if (target) {
+      io.to(target.socketId).emit("incoming-call", { roomId, callerId: socket.id });
+    }
+  });
+
+  // Step 2: When user joins call room
+  socket.on("join-call", ({ roomId }) => {
+    socket.join(roomId);
+    console.log(`👥 User ${socket.id} joined call room ${roomId}`);
+  });
+
+  // Step 3: WebRTC Offer
+  socket.on("offer", ({ roomId, sdp }) => {
+    console.log(`📡 Offer Relayed in room ${roomId}`);
+    socket.to(roomId).emit("offer", { sdp });
+  });
+
+  // Step 4: WebRTC Answer
+  socket.on("answer", ({ roomId, sdp }) => {
+    console.log(`📡 Answer Relayed in room ${roomId}`);
+    socket.to(roomId).emit("answer", { sdp });
+  });
+
+  // Step 5: ICE Candidates
+  socket.on("ice-candidate", ({ roomId, candidate }) => {
+    socket.to(roomId).emit("ice-candidate", { candidate });
+  });
+
+  // ============================================================
+  // 🔹 OLD Call Signaling (Keep it, doesn’t interfere)
+  // ============================================================
   socket.on("call-offer", ({ to, from, offer }) => {
-    console.log(`📞 Call Offer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
       io.to(target.socketId).emit("call-offer", { offer, from });
@@ -96,7 +129,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call-answer", ({ to, from, answer }) => {
-    console.log(`📞 Call Answer: ${from} → ${to}`);
     const target = onlineUsers[to];
     if (target) {
       io.to(target.socketId).emit("call-answer", { answer, from });
@@ -110,13 +142,12 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ------------------------------------------------------------
-  // 🔹 USER DISCONNECT
-  // ------------------------------------------------------------
+  // ============================================================
+  // 🔹 DISCONNECT
+  // ============================================================
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id);
 
-    // Remove user from online list
     for (const id in onlineUsers) {
       if (onlineUsers[id].socketId === socket.id) {
         delete onlineUsers[id];
