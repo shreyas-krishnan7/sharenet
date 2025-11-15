@@ -11,7 +11,14 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://sharenet-ashen.vercel.app",   // your Vercel frontend
+    "http://localhost:5173",               // local frontend dev
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 app.use(express.json());
 
 // ---- API ROUTES ---- //
