@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
+import { useNavigate } from "react-router-dom";
+
+
 
 export default function SharentChat() {
   const [socket, setSocket] = useState(null);
@@ -9,6 +12,8 @@ export default function SharentChat() {
   const [message, setMessage] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const incomingFileRef = useRef(null);
+  const navigate = useNavigate();
+  const SOCKET_URL = "http://localhost:8080";
 
   // WebRTC Refs
   const pcRef = useRef(null);
@@ -135,8 +140,6 @@ export default function SharentChat() {
 
     channel.onopen = () => console.log("✅ DataChannel open — ready to chat");
 
-    
-
     channel.onmessage = (e) => {
       if (typeof e.data === "string") {
         try {
@@ -248,60 +251,65 @@ export default function SharentChat() {
     setMessage("");
   };
   // 🧠 Handle File Selection & Sending
-const handleFileSelect = async (e) => {
-  const file = e.target.files[0];
-  if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
-    alert("⚠️ DataChannel not ready or no file selected.");
-    return;
-  }
-
-  const chunkSize = 16 * 1024; // 16KB
-  const fileReader = new FileReader();
-
-  fileReader.onload = async (event) => {
-    const buffer = event.target.result;
-    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-
-    // Send file metadata first
-    dcRef.current.send(JSON.stringify({
-      type: "file-meta",
-      name: file.name,
-      size: file.size,
-      mime: file.type,
-      totalChunks
-    }));
-
-    // Send chunks
-    let offset = 0;
-    while (offset < buffer.byteLength) {
-      const chunk = buffer.slice(offset, offset + chunkSize);
-      dcRef.current.send(chunk);
-      offset += chunkSize;
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
+      alert("⚠️ DataChannel not ready or no file selected.");
+      return;
     }
 
-    // Send end marker
-    dcRef.current.send(JSON.stringify({ type: "file-end" }));
+    const chunkSize = 16 * 1024; // 16KB
+    const fileReader = new FileReader();
 
-    console.log(`✅ File sent: ${file.name}`);
+    fileReader.onload = async (event) => {
+      const buffer = event.target.result;
+      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
 
-    // Display in sender chat
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newMsg = {
-      text: `📎 Sent file: ${file.name}`,
-      time: now,
-      sender: currentUser?.id,
-      isFile: true,
-      fileName: file.name
+      // Send file metadata first
+      dcRef.current.send(
+        JSON.stringify({
+          type: "file-meta",
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          totalChunks,
+        })
+      );
+
+      // Send chunks
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        dcRef.current.send(chunk);
+        offset += chunkSize;
+      }
+
+      // Send end marker
+      dcRef.current.send(JSON.stringify({ type: "file-end" }));
+
+      console.log(`✅ File sent: ${file.name}`);
+      e.target.value = null;
+
+      // Display in sender chat
+      const now = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const newMsg = {
+        text: `📎 Sent file: ${file.name}`,
+        time: now,
+        sender: currentUser?.id,
+        isFile: true,
+        fileName: file.name,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+      }));
     };
-    setMessages(prev => ({
-      ...prev,
-      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg]
-    }));
+
+    fileReader.readAsArrayBuffer(file);
   };
-
-  fileReader.readAsArrayBuffer(file);
-};
-
 
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -309,6 +317,26 @@ const handleFileSelect = async (e) => {
       handleSendMessage();
     }
   };
+
+  const handleCallClick = async (user) => {
+  try {
+    // Ask for camera/mic permission *before* going to the call page
+    await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+    navigate("/call", {
+      state: {
+        currentUser: currentUser,   // YOU (caller)
+        targetUser: user,           // person you are calling
+        socketUrl: SOCKET_URL,      // your backend signaling URL
+        isCaller: true,             // tells CallPage to initiate offer
+      },
+    });
+  } catch (err) {
+    console.error("Error accessing media devices:", err);
+    alert("Camera/Microphone access required to start the call.");
+  }
+};
+
 
   // 🧹 Cleanup
   const cleanupPeerConnection = () => {
@@ -383,29 +411,39 @@ const handleFileSelect = async (e) => {
       <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
         {selectedUser ? (
           <>
-            <div className="bg-white border-b border-gray-200 p-4 flex items-center flex-shrink-0">
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-                style={{
-                  background: "linear-gradient(135deg, #e91359, #ff4081)",
-                }}
+            <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                  style={{
+                    background: "linear-gradient(135deg, #e91359, #ff4081)",
+                  }}
+                >
+                  {selectedUser.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()}
+                </div>
+                <div className="ml-3 flex-1 min-w-0">
+                  <h2 className="font-semibold text-gray-900 truncate">
+                    {selectedUser.name}
+                  </h2>
+                  <p className="text-sm text-green-600">
+                    {dcRef.current?.readyState === "open"
+                      ? "Connected"
+                      : "Connecting..."}
+                  </p>
+                </div>
+              </div>
+
+              {/* 📞 Call Button */}
+              <button
+                onClick={() => handleCallClick(selectedUser)}
+                className="flex items-center bg-[#e91359] hover:bg-[#d01050] text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
               >
-                {selectedUser.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()}
-              </div>
-              <div className="ml-3 flex-1 min-w-0">
-                <h2 className="font-semibold text-gray-900 truncate">
-                  {selectedUser.name}
-                </h2>
-                <p className="text-sm text-green-600">
-                  {dcRef.current?.readyState === "open"
-                    ? "Connected"
-                    : "Connecting..."}
-                </p>
-              </div>
+                📞 Call
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">

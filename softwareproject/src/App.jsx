@@ -5,6 +5,7 @@ import Login from './components/Login.jsx'
 import Signup from './components/Signup.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Chatpage from './components/Chatpage.jsx'
+import CallPage from './components/Callpage.jsx'
 import 'react-toastify/dist/ReactToastify.css';
 
 
@@ -17,6 +18,8 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/chatpage" element={<Chatpage />} />
+        <Route path="/call" element={<CallPage />} />
+
       </Routes>
     </Router>
 
