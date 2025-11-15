@@ -8,7 +8,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 
 dotenv.config();
-connectDB(); // connect to database
+connectDB();
 
 const app = express();
 
@@ -25,17 +25,14 @@ app.use(
 
 app.use(express.json());
 
-// ---- API ROUTES ---- //
 app.use("/api/users", userRoutes);
 
 app.get("/", (req, res) => {
   res.send("API + Signaling Server is running...");
 });
 
-// ---- CREATE HTTP SERVER ---- //
 const server = createServer(app);
 
-// ---- SOCKET.IO SIGNALLING ---- //
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -43,123 +40,105 @@ const io = new Server(server, {
   },
 });
 
+// ============================================================
+// 🔵 ONLINE USERS STORE (FIXED)
+// ============================================================
 let onlineUsers = {};
 
-// ============================================================
-// 🔵 SOCKET HANDLERS
-// ============================================================
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  // A user joins platform
+  // ============================================================
+  // 🔹 USER JOINS PLATFORM (FIXED)
+  // ============================================================
   socket.on("join", (user) => {
-    onlineUsers[user.id] = { ...user, socketId: socket.id };
-    console.log("📌 User joined:", user);
+    // Store by socket.id (unique every tab)
+    onlineUsers[socket.id] = { ...user, socketId: socket.id };
+
+    console.log(`📌 User online: ${user.name} (${socket.id})`);
+
     io.emit("online-users", Object.values(onlineUsers));
   });
 
   // ============================================================
-  // 🔹 CHAT SIGNALING (DataChannel Only)
+  // 🔹 CHAT SIGNALING (unchanged)
   // ============================================================
   socket.on("chat-offer", ({ to, from, offer }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("chat-offer", { offer, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("chat-offer", { offer, from });
   });
 
   socket.on("chat-answer", ({ to, from, answer }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("chat-answer", { answer, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("chat-answer", { answer, from });
   });
 
   socket.on("chat-candidate", ({ to, from, candidate }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("chat-candidate", { candidate, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("chat-candidate", { candidate, from });
   });
 
   // ============================================================
-  // 🔹 **NEW: WebRTC Call Signaling for 1-to-1 Video Calls**
+  // 🔹 VIDEO CALL SIGNALING
   // ============================================================
-
-  // Step 1: Caller requests call
   socket.on("call-user", ({ receiverId, roomId }) => {
-    const target = onlineUsers[receiverId];
-    console.log(`📞 Call Request: ${socket.id} → ${receiverId} (room ${roomId})`);
+    const target = Object.values(onlineUsers).find(u => u.id === receiverId);
     if (target) {
-      io.to(target.socketId).emit("incoming-call", { roomId, callerId: socket.id });
+      io.to(target.socketId).emit("incoming-call", {
+        roomId,
+        callerId: socket.id,
+      });
     }
   });
 
-  // Step 2: When user joins call room
   socket.on("join-call", ({ roomId }) => {
     socket.join(roomId);
-    console.log(`👥 User ${socket.id} joined call room ${roomId}`);
+    console.log(`👥 ${socket.id} joined call room ${roomId}`);
   });
 
-  // Step 3: WebRTC Offer
   socket.on("offer", ({ roomId, sdp }) => {
-    console.log(`📡 Offer Relayed in room ${roomId}`);
     socket.to(roomId).emit("offer", { sdp });
   });
 
-  // Step 4: WebRTC Answer
   socket.on("answer", ({ roomId, sdp }) => {
-    console.log(`📡 Answer Relayed in room ${roomId}`);
     socket.to(roomId).emit("answer", { sdp });
   });
 
-  // Step 5: ICE Candidates
   socket.on("ice-candidate", ({ roomId, candidate }) => {
     socket.to(roomId).emit("ice-candidate", { candidate });
   });
 
   // ============================================================
-  // 🔹 OLD Call Signaling (Keep it, doesn’t interfere)
+  // 🔹 OLD Call Signaling (safe to keep)
   // ============================================================
   socket.on("call-offer", ({ to, from, offer }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("call-offer", { offer, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("call-offer", { offer, from });
   });
 
   socket.on("call-answer", ({ to, from, answer }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("call-answer", { answer, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("call-answer", { answer, from });
   });
 
   socket.on("call-candidate", ({ to, from, candidate }) => {
-    const target = onlineUsers[to];
-    if (target) {
-      io.to(target.socketId).emit("call-candidate", { candidate, from });
-    }
+    const target = Object.values(onlineUsers).find(u => u.id === to);
+    if (target) io.to(target.socketId).emit("call-candidate", { candidate, from });
   });
 
   // ============================================================
-  // 🔹 DISCONNECT
+  // 🔹 DISCONNECT (100% FIXED)
   // ============================================================
   socket.on("disconnect", () => {
-    console.log("🔴 User disconnected:", socket.id);
+    console.log("🔴 Disconnected:", socket.id);
 
-    for (const id in onlineUsers) {
-      if (onlineUsers[id].socketId === socket.id) {
-        delete onlineUsers[id];
-        break;
-      }
-    }
+    // Remove user instantly
+    delete onlineUsers[socket.id];
 
     io.emit("online-users", Object.values(onlineUsers));
   });
 });
 
-// ---- START SERVER ---- //
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () =>
   console.log(`🚀 API + Signaling Server running on port ${PORT}`)

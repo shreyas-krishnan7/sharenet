@@ -29,66 +29,85 @@ export default function SharentChat({ socket }) {
 
   // ✅ Initialize user ONLY (socket already exists)
   useEffect(() => {
-    if (!socket) return;
+  if (!socket) return;
 
-    const storedUser = JSON.parse(localStorage.getItem("userInfo"));
-    const me = {
-      id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
-      name: storedUser?.name || "Guest User",
-      email: storedUser?.email || "guest@example.com",
-      avatar:
-        storedUser?.name
-          ?.split(" ")
-          .map((n) => n[0])
-          .join("")
-          .toUpperCase() || "GU",
-    };
+  const storedUser = JSON.parse(localStorage.getItem("userInfo"));
+  const me = {
+    id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
+    name: storedUser?.name || "Guest User",
+    email: storedUser?.email || "guest@example.com",
+    avatar:
+      storedUser?.name
+        ?.split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase() || "GU",
+  };
 
-    setCurrentUser(me);
+  setCurrentUser(me);
 
-    // Join socket room
+  // 🔥 Prevent double join on re-renders
+  if (!socket.hasJoined) {
     socket.emit("join", me);
+    socket.hasJoined = true;
+  }
 
-    // Online users
-    socket.on("online-users", (users) => {
-      const filtered = users.filter((u) => u.id !== me.id);
-      setOnlineUsers(filtered);
-    });
+  // ----------------------
+  // ONLINE USERS
+  // ----------------------
+  const handleOnlineUsers = (users) => {
+    const filtered = users.filter((u) => u.id !== me.id);
+    setOnlineUsers(filtered);
+  };
 
-    // ----------------------
-    // CHAT SIGNALING
-    // ----------------------
+  socket.on("online-users", handleOnlineUsers);
 
-    socket.on("chat-offer", async ({ offer, from }) => {
-      createPeerConnection(from);
-      await pcRef.current.setRemoteDescription(offer);
-      const answer = await pcRef.current.createAnswer();
-      await pcRef.current.setLocalDescription(answer);
-      socket.emit("chat-answer", { to: from, from: me.id, answer });
-    });
+  // ----------------------
+  // CHAT SIGNALING
+  // ----------------------
+  const handleOffer = async ({ offer, from }) => {
+    createPeerConnection(from);
+    await pcRef.current.setRemoteDescription(offer);
+    const answer = await pcRef.current.createAnswer();
+    await pcRef.current.setLocalDescription(answer);
+    socket.emit("chat-answer", { to: from, from: me.id, answer });
+  };
 
-    socket.on("chat-answer", async ({ answer }) => {
-      if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
-    });
+  const handleAnswer = async ({ answer }) => {
+    if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
+  };
 
-    socket.on("chat-candidate", async ({ candidate }) => {
-      if (candidate && pcRef.current) {
-        await pcRef.current.addIceCandidate(candidate);
-      }
-    });
+  const handleCandidate = async ({ candidate }) => {
+    if (candidate && pcRef.current) {
+      await pcRef.current.addIceCandidate(candidate);
+    }
+  };
 
-    // ----------------------
-    // CALL SIGNALING
-    // ----------------------
+  socket.on("chat-offer", handleOffer);
+  socket.on("chat-answer", handleAnswer);
+  socket.on("chat-candidate", handleCandidate);
 
-    socket.on("incoming-call", ({ roomId }) => {
-      setIncomingCall({ roomId });
-    });
+  // ----------------------
+  // CALL SIGNALING
+  // ----------------------
+  const handleIncomingCall = ({ roomId }) => {
+    setIncomingCall({ roomId });
+  };
 
-    return () => {
-      cleanupPeerConnection();
-    };
-  }, [socket]);
+  socket.on("incoming-call", handleIncomingCall);
+
+  // ----------------------
+  // CLEANUP — prevents duplicate listeners!
+  // ----------------------
+  return () => {
+    socket.off("online-users", handleOnlineUsers);
+    socket.off("chat-offer", handleOffer);
+    socket.off("chat-answer", handleAnswer);
+    socket.off("chat-candidate", handleCandidate);
+    socket.off("incoming-call", handleIncomingCall);
+  };
+}, [socket]);
+
 
   // ---------------------------
   // 📞 Start Call
