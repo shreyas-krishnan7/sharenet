@@ -270,6 +270,13 @@ export default function SharentChat({ socket }) {
 
   fileReader.readAsArrayBuffer(file);
 };
+const handleKeyPress = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    handleSendMessage();
+  }
+};
+
 
 
   const cleanupPeerConnection = () => {
