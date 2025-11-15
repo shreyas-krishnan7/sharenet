@@ -210,6 +210,67 @@ export default function SharentChat({ socket }) {
 
     setMessage("");
   };
+  const handleFileSelect = async (e) => {
+  const file = e.target.files[0];
+  if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
+    alert("⚠️ DataChannel not ready or no file selected.");
+    return;
+  }
+
+  const chunkSize = 16 * 1024; // 16KB
+  const fileReader = new FileReader();
+
+  fileReader.onload = async (event) => {
+    const buffer = event.target.result;
+    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+
+    // Send file metadata first
+    dcRef.current.send(
+      JSON.stringify({
+        type: "file-meta",
+        name: file.name,
+        size: file.size,
+        mime: file.type,
+        totalChunks,
+      })
+    );
+
+    // Send chunks
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const chunk = buffer.slice(offset, offset + chunkSize);
+      dcRef.current.send(chunk);
+      offset += chunkSize;
+    }
+
+    // Send end marker
+    dcRef.current.send(JSON.stringify({ type: "file-end" }));
+
+    console.log(`✅ File sent: ${file.name}`);
+    e.target.value = null;
+
+    // Display in sender chat
+    const now = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const newMsg = {
+      text: `📎 Sent file: ${file.name}`,
+      time: now,
+      sender: currentUser?.id,
+      isFile: true,
+      fileName: file.name,
+    };
+
+    setMessages((prev) => ({
+      ...prev,
+      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+    }));
+  };
+
+  fileReader.readAsArrayBuffer(file);
+};
+
 
   const cleanupPeerConnection = () => {
     try {
