@@ -5,7 +5,7 @@ import Login from './components/Login.jsx'
 import Signup from './components/Signup.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Chatpage from './components/Chatpage.jsx'
-import CallPage from './components/Callpage.jsx'
+import CallRoom from './components/Callroom.jsx'
 import 'react-toastify/dist/ReactToastify.css';
 
 
