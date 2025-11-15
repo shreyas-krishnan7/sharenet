@@ -8,49 +8,63 @@ export default function CallRoom({ socket }) {
   const remoteVideo = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const pendingCandidates = useRef([]);
 
-  const [isCaller, setIsCaller] = useState(null); // null until known
+  const [isCaller, setIsCaller] = useState(null); // null until we know role
 
+  // ---------------------------------------------
+  // JOIN CALL ROOM
+  // ---------------------------------------------
   useEffect(() => {
     if (!socket) return;
 
     socket.emit("join-call", { roomId });
 
-    // 🔹 Server tells how many participants are in the room
+    // Server tells how many participants are present
     socket.on("room-joined", ({ participants }) => {
+      console.log("👥 Participants in room:", participants);
+
       if (participants === 1) {
-        setIsCaller(true);     // First user
+        setIsCaller(true);   // first user
       } else if (participants === 2) {
-        setIsCaller(false);    // Second user
+        setIsCaller(false);  // second user
       }
     });
-
-    // Now wait for isCaller to be determined
   }, [socket]);
 
-  // 🟦 When caller/callee is known, then initialize WebRTC
+  // ---------------------------------------------
+  // WHEN CALLER/CALLEE ROLE IS KNOWN → SETUP WEBRTC
+  // ---------------------------------------------
   useEffect(() => {
-    if (isCaller === null) return; // Wait until we know role
+    if (isCaller === null) return; // Wait for role
+
+    console.log("🎯 Role decided:", isCaller ? "Caller" : "Callee");
+
     initWebRTC();
     setupSocketListeners();
   }, [isCaller]);
 
-  // ----------------------------------------------------
+  // ---------------------------------------------
   // INIT MEDIA + PEER CONNECTION
-  // ----------------------------------------------------
+  // ---------------------------------------------
   const initWebRTC = async () => {
-    await initMedia();          // Get local camera
-    createPeer();               // Create RTCPeerConnection
-    attachTracks();             // Add tracks AFTER PC created
+    await initMedia();   // get camera
+    createPeer();        // create RTCPeerConnection
+    attachTracks();      // add tracks after creating PC
   };
 
   const initMedia = async () => {
-    localStreamRef.current = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    try {
+      localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
 
-    localVideo.current.srcObject = localStreamRef.current;
+      localVideo.current.srcObject = localStreamRef.current;
+      console.log("📷 Local stream ready");
+    } catch (err) {
+      console.error("Media error:", err);
+    }
   };
 
   const createPeer = () => {
@@ -80,6 +94,7 @@ export default function CallRoom({ socket }) {
       ],
     });
 
+    // ICE candidate event
     pcRef.current.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("ice-candidate", {
@@ -89,11 +104,13 @@ export default function CallRoom({ socket }) {
       }
     };
 
+    // Remote stream arrives
     pcRef.current.ontrack = (event) => {
+      console.log("🎥 Remote track received");
       remoteVideo.current.srcObject = event.streams[0];
     };
 
-    // 🔥 Negotiation only for caller
+    // Caller creates offer AFTER negotiation triggers
     pcRef.current.onnegotiationneeded = async () => {
       if (!isCaller) return;
 
@@ -111,13 +128,23 @@ export default function CallRoom({ socket }) {
     });
   };
 
-  // ----------------------------------------------------
-  // SOCKET SIGNALING HANDLERS
-  // ----------------------------------------------------
+  // ---------------------------------------------
+  // SIGNALING HANDLERS
+  // ---------------------------------------------
   const setupSocketListeners = () => {
+    // OFFER RECEIVED (callee)
     socket.on("offer", async ({ sdp }) => {
-      console.log("📩 Offer received");
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("📩 Offer received from caller");
+
+      await pcRef.current.setRemoteDescription(
+        new RTCSessionDescription(sdp)
+      );
+
+      // Process queued ICE candidates
+      while (pendingCandidates.current.length > 0) {
+        const candidate = pendingCandidates.current.shift();
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      }
 
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
@@ -125,27 +152,46 @@ export default function CallRoom({ socket }) {
       socket.emit("answer", { roomId, sdp: answer });
     });
 
+    // ANSWER RECEIVED (caller)
     socket.on("answer", async ({ sdp }) => {
-      console.log("📩 Answer received");
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("📩 Answer received from callee");
+
+      await pcRef.current.setRemoteDescription(
+        new RTCSessionDescription(sdp)
+      );
+
+      // Process queued ICE candidates
+      while (pendingCandidates.current.length > 0) {
+        const candidate = pendingCandidates.current.shift();
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      }
     });
 
+    // ICE RECEIVED
     socket.on("ice-candidate", async ({ candidate }) => {
+      const pc = pcRef.current;
+      if (!pc) return;
+
+      if (!pc.remoteDescription) {
+        pendingCandidates.current.push(candidate);
+        return;
+      }
+
       try {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
-        console.error("ICE error:", err);
+        console.error("❌ ICE error:", err);
       }
     });
   };
 
-  // ----------------------------------------------------
+  // ---------------------------------------------
   // CLEANUP
-  // ----------------------------------------------------
+  // ---------------------------------------------
   const cleanup = () => {
     if (pcRef.current) pcRef.current.close();
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
     }
   };
 
