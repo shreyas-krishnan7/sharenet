@@ -174,21 +174,81 @@ export default function SharentChat({ socket }) {
     dcRef.current = channel;
 
     channel.onmessage = (e) => {
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+  // ----- CASE 1: FILE CHUNK (ArrayBuffer) -----
+  if (e.data instanceof ArrayBuffer) {
+    if (incomingFileRef.current) {
+      incomingFileRef.current.chunks.push(e.data);
+    }
+    return;
+  }
 
-      const fromId = targetPeerIdRef.current;
+  // ----- CASE 2: STRING MESSAGES -----
+  let msgData;
+  try {
+    msgData = JSON.parse(e.data);
+  } catch {
+    msgData = null;
+  }
 
-      setMessages((prev) => ({
-        ...prev,
-        [fromId]: [
-          ...(prev[fromId] || []),
-          { text: e.data, time: now, sender: fromId },
-        ],
-      }));
+  // ----- FILE META -----
+  if (msgData?.type === "file-meta") {
+    incomingFileRef.current = {
+      name: msgData.name,
+      size: msgData.size,
+      mime: msgData.mime,
+      totalChunks: msgData.totalChunks,
+      chunks: [],
     };
+    return;
+  }
+
+  // ----- FILE END -----
+  if (msgData?.type === "file-end") {
+    const file = incomingFileRef.current;
+    const blob = new Blob(file.chunks, { type: file.mime });
+    const fileURL = URL.createObjectURL(blob);
+
+    const now = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    setMessages((prev) => ({
+      ...prev,
+      [targetPeerIdRef.current]: [
+        ...(prev[targetPeerIdRef.current] || []),
+        {
+          text: `📎 ${file.name}`,
+          fileURL,
+          isFile: true,
+          fileName: file.name,
+          time: now,
+          sender: targetPeerIdRef.current,
+        },
+      ],
+    }));
+
+    incomingFileRef.current = null;
+    return;
+  }
+
+  // ----- NORMAL TEXT MESSAGE -----
+  const now = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const fromId = targetPeerIdRef.current;
+
+  setMessages((prev) => ({
+    ...prev,
+    [fromId]: [
+      ...(prev[fromId] || []),
+      { text: e.data, time: now, sender: fromId },
+    ],
+  }));
+};
+
   };
 
   const startCallWith = async (user) => {
