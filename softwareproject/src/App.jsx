@@ -11,7 +11,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { io } from "socket.io-client";
 
 // ✅ Create ONE socket for the entire app
-const socket = io("https://sharenet-dehy.onrender.com", {
+const socket = io("https://sharenet-production.up.railway.app", {
   transports: ["websocket"],
 });
 
