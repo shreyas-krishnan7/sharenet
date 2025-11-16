@@ -94,10 +94,21 @@ export default function CallRoom({ socket }) {
         addExplicitTransceivers();
       }
 
-      // If caller, send offer after a small wait so callee has time to attach
+      // Both caller AND callee should attach tracks early
+      log("📍 Pre-attaching tracks for", isCaller ? "Caller" : "Callee");
+      attachTracks();
+
+      // If caller, send offer after a LONGER wait so callee has time to:
+      // 1. Join room
+      // 2. Create peer
+      // 3. Add transceivers
+      // 4. Attach tracks
+      // Account for slow desktop cameras (up to 1000ms for initialization)
       if (isCaller) {
-        // slight delay to allow callee to finish join/initMedia
-        setTimeout(() => sendOfferLater(), 400);
+        setTimeout(() => {
+          log("📡 Caller: now sending offer (after 1000ms delay for callee setup)");
+          sendOfferLater();
+        }, 1000);
       }
     })();
 
@@ -176,18 +187,28 @@ export default function CallRoom({ socket }) {
         remoteVideo.current.playsInline = true;
         remoteVideo.current.muted = false;
 
+        log("🎬 remoteVideo srcObject set, waiting for metadata...");
+
         // Try to play and also wait for metadata (some browsers require it)
         remoteVideo.current.onloadedmetadata = () => {
           log("🎉 remote onloadedmetadata — attempting play()");
           remoteVideo.current.play().catch(err => log("⚠️ remote play() error:", err));
         };
 
-        // Force a play attempt (may be blocked but that gives a useful error)
+        // Force a play attempt with delays (slower cameras may need more time)
         setTimeout(() => {
+          log("⏱️ Attempting remote play() after 300ms...");
           remoteVideo.current.play().catch((err) => {
-            log("⚠️ remote play() attempt:", err);
+            log("⚠️ remote play() attempt (300ms):", err);
           });
-        }, 150);
+        }, 300);
+
+        setTimeout(() => {
+          log("⏱️ Attempting remote play() after 800ms...");
+          remoteVideo.current.play().catch((err) => {
+            log("⚠️ remote play() attempt (800ms):", err);
+          });
+        }, 800);
       } else {
         log("⚠️ remoteVideo ref missing");
       }
@@ -250,28 +271,22 @@ export default function CallRoom({ socket }) {
   // SEND OFFER (caller)
   // =========================================================
   const sendOfferLater = () => {
-    log("⏳ Caller will send offer in 400ms…");
-    setTimeout(async () => {
-      try {
-        log("📍 About to attach tracks (caller)...");
-        attachTracks();
+    try {
+      log("📡 Caller creating OFFER…");
+      const offer = pcRef.current.createOffer();
+      pcRef.current.setLocalDescription(offer);
 
-        log("📡 Caller creating OFFER…");
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
+      const transceivers = pcRef.current.getTransceivers();
+      log("📊 OFFER: Transceivers count:", transceivers.length);
+      transceivers.forEach((t, i) => {
+        log(`   [${i}] kind=${t.receiver?.track?.kind || t.sender?.track?.kind || "unknown"}, direction=${t.direction}`);
+      });
 
-        const transceivers = pcRef.current.getTransceivers();
-        log("📊 OFFER: Transceivers count:", transceivers.length);
-        transceivers.forEach((t, i) => {
-          log(`   [${i}] kind=${t.receiver?.track?.kind || t.sender?.track?.kind || "unknown"}, direction=${t.direction}`);
-        });
-
-        socket.emit("offer", { roomId, sdp: offer });
-        log("📤 OFFER SENT");
-      } catch (err) {
-        log("❌ Error creating/sending offer:", err);
-      }
-    }, 400);
+      socket.emit("offer", { roomId, sdp: offer });
+      log("📤 OFFER SENT");
+    } catch (err) {
+      log("❌ Error creating/sending offer:", err);
+    }
   };
 
   // =========================================================
@@ -303,8 +318,11 @@ export default function CallRoom({ socket }) {
     }
 
     // Attach tracks NOW (this must run)
-    log("📍 Callee attaching tracks...");
+    log("📍 Callee attaching tracks BEFORE answer...");
+    const sendersBefore = pcRef.current.getSenders().length;
     attachTracks();
+    const sendersAfter = pcRef.current.getSenders().length;
+    log("📊 Senders before attach:", sendersBefore, "after attach:", sendersAfter);
 
     // Add queued ICE candidates
     while (pendingCandidates.current.length > 0) {
@@ -320,8 +338,18 @@ export default function CallRoom({ socket }) {
       log("🎤 Creating ANSWER…");
       const answer = await pcRef.current.createAnswer();
       await pcRef.current.setLocalDescription(answer);
+
+      // Log what the answer will send to caller
+      const transceivers = pcRef.current.getTransceivers();
+      log("📊 ANSWER: Sending back transceivers:", transceivers.length);
+      transceivers.forEach((t, i) => {
+        const senderTrackKind = t.sender?.track?.kind;
+        const receiverTrackKind = t.receiver?.track?.kind;
+        log(`   [${i}] sender track=${senderTrackKind}, receiver track=${receiverTrackKind}, direction=${t.direction}`);
+      });
+
       socket.emit("answer", { roomId, sdp: answer });
-      log("📤 ANSWER SENT");
+      log("📤 ANSWER SENT with tracks");
     } catch (e) {
       log("❌ Error creating/sending answer:", e);
     }
@@ -368,7 +396,7 @@ export default function CallRoom({ socket }) {
 
     try {
       await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-      log("➕ added ICE candidate");
+      log("➕ added ICE candidate", pcRef.current.iceConnectionState);
     } catch (err) {
       log("❌ ICE add error:", err);
     }
