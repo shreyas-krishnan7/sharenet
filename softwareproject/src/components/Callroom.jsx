@@ -523,23 +523,39 @@ export default function CallRoom({ socket }) {
   // UI
   // =========================================================
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-black text-white gap-4">
-      <h2 className="text-xl font-semibold mb-4">Video Call</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+      <div className="w-full max-w-6xl bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-2xl font-semibold text-gray-800 mb-6">Video Call</h2>
 
-      <video
-        ref={localVideo}
-        autoPlay
-        muted
-        playsInline
-        className="w-1/3 rounded-xl border"
-      />
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Local video box */}
+          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center">
+            <div className="w-full h-64 md:h-96 overflow-hidden rounded-lg">
+              <video
+                ref={localVideo}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="absolute mt-2 ml-2 text-sm text-gray-700">You</div>
+          </div>
 
-      <video
-        ref={remoteVideo}
-        autoPlay
-        playsInline
-        className="w-1/3 rounded-xl border"
-      />
+          {/* Remote video box */}
+          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center">
+            <div className="w-full h-64 md:h-96 overflow-hidden rounded-lg">
+              <video
+                ref={remoteVideo}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="absolute mt-2 ml-2 text-sm text-gray-700">Remote</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
