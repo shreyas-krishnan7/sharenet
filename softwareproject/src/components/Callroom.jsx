@@ -43,11 +43,12 @@ export default function CallRoom({ socket }) {
     if (!roleKnown) return;
 
     console.log("🎯 Role decided:", isCaller ? "Caller" : "Callee");
+    setupSocketListeners();
 
     // init + listeners
     (async () => {
       await initWebRTC();
-      setupSocketListeners();
+      
     })();
 
     // cleanup on unmount (remove socket listeners and close pc)
@@ -104,7 +105,8 @@ export default function CallRoom({ socket }) {
         audio: true,
       });
 
-      if (localVideo.current) localVideo.current.srcObject = localStreamRef.current;
+      if (localVideo.current)
+        localVideo.current.srcObject = localStreamRef.current;
       console.log("📷 Local stream ready");
     } catch (err) {
       console.error("Media error:", err);
@@ -165,32 +167,53 @@ export default function CallRoom({ socket }) {
   // ---------------------------------------------
   const setupSocketListeners = () => {
     // OFFER RECEIVED (callee)
-    const handleOffer = async ({ sdp }) => {
+    const handleOffer = async ({ sdp, from }) => {
+      console.log("🔥 Incoming OFFER event:", { from, hasSDP: !!sdp });
+
       try {
-        console.log("📩 Offer received from caller");
+        const pc = pcRef.current;
+        if (!pc) {
+          console.warn(
+            "⚠️ PeerConnection missing — creating new one on callee"
+          );
+          createPeer();
+        }
 
-        // ensure peer exists
-        if (!pcRef.current) createPeer();
+        console.log("📥 Setting remote description (offer)...");
+        await pcRef.current.setRemoteDescription(
+          new RTCSessionDescription(sdp)
+        );
+        console.log("✅ Remote description set");
 
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+        // Process queued candidates
+        if (pendingCandidates.current.length > 0) {
+          console.log(
+            "🔄 Processing queued ICE candidates:",
+            pendingCandidates.current.length
+          );
+        }
 
-        // Process queued ICE candidates (that arrived early)
         while (pendingCandidates.current.length > 0) {
           const candidate = pendingCandidates.current.shift();
           try {
             await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
           } catch (err) {
-            console.warn("Failed adding queued candidate:", err);
+            console.warn("⚠️ Failed adding queued ICE:", err);
           }
         }
 
+        console.log("🎤 Creating answer...");
         const answer = await pcRef.current.createAnswer();
+
+        console.log("📥 Setting local description (answer)...");
         await pcRef.current.setLocalDescription(answer);
 
+        console.log("📤 Sending ANSWER back to caller...");
         socket.emit("answer", { roomId, sdp: answer });
-        console.log("📡 Answer sent");
+
+        console.log("✅ Answer sent successfully");
       } catch (err) {
-        console.error("Error handling offer:", err);
+        console.error("❌ ERROR in handleOffer():", err);
       }
     };
 
@@ -204,7 +227,9 @@ export default function CallRoom({ socket }) {
           createPeer();
         }
 
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+        await pcRef.current.setRemoteDescription(
+          new RTCSessionDescription(sdp)
+        );
 
         // Process queued ICE candidates
         while (pendingCandidates.current.length > 0) {
