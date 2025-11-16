@@ -365,46 +365,16 @@ export default function CallRoom({ socket }) {
     };
 
     pcRef.current.ontrack = (event) => {
-      console.log("🎥 Remote track received", event);
-      try {
-        // Prefer full stream if provided
-        let streamToUse = null;
-        if (event.streams && event.streams[0]) {
-          streamToUse = event.streams[0];
-        } else if (event.track) {
-          // Fallback: create a stream from the single track
-          streamToUse = new MediaStream([event.track]);
-        }
-
-        if (!streamToUse) {
-          console.warn("ontrack received no streams or track", event);
-          return;
-        }
-
-        // Temporarily mute remote video to allow autoplay in many browsers
-        try {
-          remoteVideo.current.muted = true;
-        } catch (e) {}
-
-        remoteVideo.current.srcObject = streamToUse;
-
-        // play and then unmute when playback starts
-        const playPromise = remoteVideo.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log("▶️ Remote video playing");
-              try {
-                remoteVideo.current.muted = false;
-              } catch (e) {}
-            })
-            .catch((err) => {
-              console.warn("Remote video play() blocked or errored:", err);
-            });
-        }
-      } catch (err) {
-        console.error("Error setting remote stream:", err);
+      console.log("🎥🎥🎥 REMOTE TRACK ARRIVED 🎥🎥🎥", "kind:", event.track.kind);
+      if (event.streams && event.streams.length > 0) {
+        console.log("✅ Setting remote stream from event.streams[0]");
+        remoteVideo.current.srcObject = event.streams[0];
+      } else {
+        console.warn("⚠️ No streams in event, creating MediaStream");
+        const ms = new MediaStream([event.track]);
+        remoteVideo.current.srcObject = ms;
       }
+      console.log("🎥 Remote video srcObject set:", remoteVideo.current.srcObject ? "YES" : "NO");
     };
   };
 
@@ -429,11 +399,18 @@ export default function CallRoom({ socket }) {
     setTimeout(async () => {
       try {
         // IMPORTANT: attach tracks HERE (not earlier)
+        console.log("📍 About to attach tracks...");
         attachTracks();
 
         console.log("📡 Caller creating OFFER…");
         const offer = await pcRef.current.createOffer();
         await pcRef.current.setLocalDescription(offer);
+
+        const transceivers = pcRef.current.getTransceivers();
+        console.log("📊 OFFER: Transceivers count:", transceivers.length);
+        transceivers.forEach((t, i) => {
+          console.log(`   [${i}] kind=${t.kind}, direction=${t.direction}`);
+        });
 
         socket.emit("offer", { roomId, sdp: offer });
         console.log("📤 OFFER SENT");
@@ -454,8 +431,15 @@ export default function CallRoom({ socket }) {
     // First set remote description from the caller
     await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
 
+    const transceivers = pcRef.current.getTransceivers();
+    console.log("📊 OFFER (Callee): Transceivers count:", transceivers.length);
+    transceivers.forEach((t, i) => {
+      console.log(`   [${i}] kind=${t.kind}, direction=${t.direction}`);
+    });
+
     // Then attach local tracks (callee should add its tracks before creating answer)
     if (localStreamRef.current) {
+      console.log("📍 About to attach callee tracks...");
       attachTracks();
     }
 
@@ -480,6 +464,12 @@ export default function CallRoom({ socket }) {
     console.log("📩 ANSWER received from callee");
 
     await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    const transceivers = pcRef.current.getTransceivers();
+    console.log("📊 ANSWER: Transceivers count:", transceivers.length);
+    transceivers.forEach((t, i) => {
+      console.log(`   [${i}] kind=${t.kind}, direction=${t.direction}`);
+    });
 
     while (pendingCandidates.current.length > 0) {
       const cand = pendingCandidates.current.shift();
