@@ -17,6 +17,22 @@ export default function CallRoom({ socket }) {
   // JOIN CALL ROOM (use server ack to avoid race)
   // ---------------------------------------------
   useEffect(() => {
+  if (!socket) return;
+
+  console.log("🟢 Global listeners attached");
+
+  socket.on("offer", handleOffer);
+  socket.on("answer", handleAnswer);
+  socket.on("ice-candidate", handleICE);
+
+  return () => {
+    socket.off("offer", handleOffer);
+    socket.off("answer", handleAnswer);
+    socket.off("ice-candidate", handleICE);
+  };
+}, [socket]);
+
+  useEffect(() => {
     if (!socket) return;
 
     // Join and use a callback acknowledgement from server
@@ -36,67 +52,40 @@ export default function CallRoom({ socket }) {
     // cleanup nothing else here
   }, [socket, roomId]);
 
-  // ---------------------------------------------
-  // Once role is known -> initialize webrtc + listeners
-  // ---------------------------------------------
-  useEffect(() => {
-    if (!roleKnown) return;
-
-    console.log("🎯 Role decided:", isCaller ? "Caller" : "Callee");
-    setupSocketListeners();
-
-    // init + listeners
-    (async () => {
-      await initWebRTC();
-      
-    })();
-
-    // cleanup on unmount (remove socket listeners and close pc)
-    return () => {
-      cleanup();
-
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleKnown]);
+ 
 
   // ---------------------------------------------
   // INIT MEDIA + PEER CONNECTION
   // ---------------------------------------------
-  const initWebRTC = async () => {
-    await initMedia(); // get camera
-    createPeer(); // create RTCPeerConnection
-    attachTracks(); // add tracks after creating PC
+ const initWebRTC = async () => {
+  await initMedia();
+  createPeer();
+  attachTracks();
 
-    // FORCED OFFER: if caller, wait a short moment (ensures server/room fully stable)
-    if (isCaller) {
-      try {
-        console.log("📡 Caller will create offer after short delay...");
-        // small delay avoids racing with socket join propagation
-        setTimeout(async () => {
-          // double-check pc exists and socket connected
-          if (!pcRef.current) return;
-          if (!socket || !socket.connected) {
-            console.warn("Socket not connected yet — skipping forced offer");
-            return;
-          }
+  // Only caller creates offer
+  if (isCaller) {
+    console.log("📡 Caller will create offer after delay...");
 
-          try {
-            const offer = await pcRef.current.createOffer();
-            await pcRef.current.setLocalDescription(offer);
-            socket.emit("offer", { roomId, sdp: offer });
-            console.log("📡 Offer sent");
-          } catch (err) {
-            console.error("Error creating/sending offer:", err);
-          }
-        }, 200); // 200ms delay is usually enough
-      } catch (err) {
-        console.error("Error forcing offer:", err);
+    setTimeout(async () => {
+      if (!pcRef.current) {
+        console.warn("Peer connection missing at offer time");
+        return;
       }
-    }
-  };
+
+      try {
+        console.log("📡 Caller creating offer NOW...");
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
+
+        socket.emit("offer", { roomId, sdp: offer });
+        console.log("📤 OFFER SENT");
+      } catch (err) {
+        console.error("❌ Offer creation/send error:", err);
+      }
+    }, 700);  // <-- KEY FIX
+  }
+};
+
 
   const initMedia = async () => {
     try {
