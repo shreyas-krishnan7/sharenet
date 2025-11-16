@@ -381,13 +381,23 @@ export default function CallRoom({ socket }) {
   const attachTracks = () => {
     if (!localStreamRef.current || !pcRef.current) return;
 
-    localStreamRef.current.getTracks().forEach((track) => {
-      console.log("➕ Attaching track to PeerConnection:", track.kind, track);
-      const sender = pcRef.current.addTrack(track, localStreamRef.current);
-      console.log("   -> sender added:", sender && sender.track && sender.track.kind);
+    const senders = pcRef.current.getSenders();
+    const tracks = localStreamRef.current.getTracks();
+
+    console.log("🔧 Attaching tracks. Senders:", senders.length, "Tracks:", tracks.length);
+
+    tracks.forEach((track) => {
+      const sender = senders.find((s) => s.track && s.track.kind === track.kind);
+      if (sender) {
+        console.log("✏️ Replacing track on sender:", track.kind);
+        sender.replaceTrack(track);
+      } else {
+        console.log("❌ No sender found for:", track.kind, "- addTrack");
+        pcRef.current.addTrack(track, localStreamRef.current);
+      }
     });
 
-    console.log("🎬 Tracks attached (senders):", pcRef.current.getSenders().map(s => s.track && s.track.kind));
+    console.log("🎬 Tracks attached. Final senders:", pcRef.current.getSenders().length);
   };
 
   // =========================================================
