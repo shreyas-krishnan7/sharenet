@@ -398,6 +398,12 @@ export default function CallRoom({ socket }) {
 
     setTimeout(async () => {
       try {
+        // **CRITICAL FIX**: Add transceivers explicitly FIRST
+        console.log("🔧 Adding explicit transceivers...");
+        pcRef.current.addTransceiver('video', { direction: 'sendrecv' });
+        pcRef.current.addTransceiver('audio', { direction: 'sendrecv' });
+        console.log("✅ Transceivers added");
+
         // IMPORTANT: attach tracks HERE (not earlier)
         console.log("📍 About to attach tracks...");
         attachTracks();
