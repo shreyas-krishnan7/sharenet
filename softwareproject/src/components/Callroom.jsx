@@ -451,12 +451,13 @@ export default function CallRoom({ socket }) {
 
     if (!pcRef.current) createPeer();
 
-    // Callee MUST attach tracks at offer time
+    // First set remote description from the caller
+    await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Then attach local tracks (callee should add its tracks before creating answer)
     if (localStreamRef.current) {
       attachTracks();
     }
-
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
 
     // Ice candidates that came early
     while (pendingCandidates.current.length > 0) {
