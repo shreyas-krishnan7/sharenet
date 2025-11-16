@@ -357,8 +357,29 @@ export default function CallRoom({ socket }) {
     };
 
     pcRef.current.ontrack = (event) => {
-      console.log("🎥 Remote track received");
-      remoteVideo.current.srcObject = event.streams[0];
+      console.log("🎥 Remote track received", event);
+      try {
+        // Prefer full stream if provided
+        if (event.streams && event.streams[0]) {
+          remoteVideo.current.srcObject = event.streams[0];
+        } else if (event.track) {
+          // Fallback: create a stream from the single track
+          const ms = new MediaStream([event.track]);
+          remoteVideo.current.srcObject = ms;
+        } else {
+          console.warn("ontrack received no streams or track", event);
+        }
+
+        // Attempt to play (autoplay may be blocked if not muted)
+        const playPromise = remoteVideo.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn("Remote video play() blocked:", err);
+          });
+        }
+      } catch (err) {
+        console.error("Error setting remote stream:", err);
+      }
     };
   };
 
