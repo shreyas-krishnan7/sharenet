@@ -144,6 +144,8 @@ export default function CallRoom({ socket }) {
   // ATTACH TRACKS USING REPLACE
   // =========================================================
   const attachTracks = () => {
+    console.log("⭐ attachTracks CALLED on:", isCaller ? "Caller" : "Callee");
+
     if (!localStreamRef.current || !pcRef.current) return;
 
     const tracks = localStreamRef.current.getTracks();
@@ -223,35 +225,35 @@ export default function CallRoom({ socket }) {
   //   socket.emit("answer", { roomId, sdp: answer });
   //   console.log("📤 ANSWER SENT");
   // }
-  async function handleOffer({ sdp }) {
+ async function handleOffer({ sdp }) {
   console.log("🔥 OFFER received from caller");
 
-  // Step 1: make sure media is ready BEFORE answering
+  // (1) Make sure media is ready BEFORE answering
   if (!localStreamRef.current) {
-    console.log("⏳ Callee waiting for media...");
+    console.log("⏳ Callee waiting for media to be ready...");
     await initMedia();
   }
 
-  // Step 2: ensure PeerConnection exists
+  // (2) Make sure PeerConnection + transceivers exist BEFORE SDP
   if (!pcRef.current) {
     createPeer();
     addExplicitTransceivers();
   }
 
-  // Step 3: Set remote description
+  // (3) Set the remote SDP
   await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
 
-  // Step 4: NOW attach the tracks
-  console.log("📍 Callee attaching tracks...");
+  // (4) NOW attach tracks (this is the part NOT happening on your callee)
+  console.log("📍 Callee attaching tracks (THIS MUST RUN)...");
   attachTracks();
 
-  // Step 5: Apply pending ICE candidates
+  // (5) Apply queued ICE candidates
   while (pendingCandidates.current.length > 0) {
     const cand = pendingCandidates.current.shift();
     await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
   }
 
-  // Step 6: Create and send answer
+  // (6) Create + send the answer
   console.log("🎤 Creating ANSWER…");
   const answer = await pcRef.current.createAnswer();
   await pcRef.current.setLocalDescription(answer);
@@ -259,6 +261,7 @@ export default function CallRoom({ socket }) {
   socket.emit("answer", { roomId, sdp: answer });
   console.log("📤 ANSWER SENT");
 }
+
 
 
   // =========================================================
