@@ -14,22 +14,56 @@ export default function CallRoom({ socket }) {
   const [roleKnown, setRoleKnown] = useState(false);
   const [isCaller, setIsCaller] = useState(null);
 
+  // ---------------------------
+  // Helper logs (prefix with device/time if needed)
+  // ---------------------------
+  const log = (...args) => console.log(...args);
+
   // =========================================================
-  // 1) JOIN + DETERMINE ROLE
+  // IMMEDIATELY request media on mount so both peers have streams
+  // =========================================================
+  useEffect(() => {
+    (async () => {
+      try {
+        log("⏳ Requesting media immediately on mount...");
+        await initMedia(); // safe if already called
+        log("✅ Initial media (mount) ready");
+      } catch (e) {
+        log("⚠️ initial initMedia error:", e);
+      }
+    })();
+    // we intentionally run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // =========================================================
+  // 1) JOIN ROOM + DETERMINE ROLE (wait for local media before join)
   // =========================================================
   useEffect(() => {
     if (!socket) return;
 
-    socket.emit("join-call", { roomId }, (participants) => {
-      console.log("👥 join-call ack participants:", participants);
+    (async () => {
+      // Ensure local media is ready BEFORE join so callee can attach tracks quickly
+      if (!localStreamRef.current) {
+        log("⏳ Waiting for localMedia before join...");
+        try {
+          await initMedia();
+        } catch (err) {
+          log("⚠️ initMedia failed before join:", err);
+        }
+      }
 
-      setIsCaller(participants === 1);
-      setRoleKnown(true);
-    });
+      socket.emit("join-call", { roomId }, (participants) => {
+        log("👥 join-call ack participants:", participants);
+        // participants === 1 => first person (caller)
+        setIsCaller(participants === 1);
+        setRoleKnown(true);
+      });
+    })();
   }, [socket, roomId]);
 
   // =========================================================
-  // 2) SOCKET LISTENERS
+  // 2) GLOBAL SOCKET LISTENERS
   // =========================================================
   useEffect(() => {
     if (!socket) return;
@@ -46,46 +80,62 @@ export default function CallRoom({ socket }) {
   }, [socket]);
 
   // =========================================================
-  // 3) AFTER ROLE IS KNOWN → START WEBRTC
+  // 3) START WEBRTC once role known: create pc + transceivers
   // =========================================================
   useEffect(() => {
     if (!roleKnown) return;
 
-    console.log("🎯 ROLE:", isCaller ? "Caller" : "Callee");
-
     (async () => {
-      await initWebRTC();
+      log("🎯 ROLE:", isCaller ? "Caller" : "Callee");
 
-      if (isCaller) sendOfferLater();
+      // create peer and ensure transceivers exist early
+      if (!pcRef.current) {
+        createPeer();
+        addExplicitTransceivers();
+      }
+
+      // If caller, send offer after a small wait so callee has time to attach
+      if (isCaller) {
+        // slight delay to allow callee to finish join/initMedia
+        setTimeout(() => sendOfferLater(), 400);
+      }
     })();
 
     return () => cleanup();
-  }, [roleKnown]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleKnown, isCaller]);
 
   // =========================================================
-  // 4) INIT WEBRTC
+  // MEDIA / PEER Creation
   // =========================================================
-  const initWebRTC = async () => {
-    await initMedia();
-    createPeer();
-    addExplicitTransceivers(); // 🔥 Important
-  };
-
   const initMedia = async () => {
+    // If already present, return quickly
+    if (localStreamRef.current) return;
+
     try {
-      localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
+      localStreamRef.current = stream;
 
-      localVideo.current.srcObject = localStreamRef.current;
-      console.log("📷 Local stream ready");
+      if (localVideo.current) {
+        localVideo.current.srcObject = stream;
+        localVideo.current.muted = true; // local preview muted
+        localVideo.current.autoplay = true;
+        localVideo.current.playsInline = true;
+      }
+
+      log("📷 Local stream ready, tracks:", stream.getTracks().map(t => t.kind));
     } catch (err) {
-      console.error("Media error:", err);
+      log("Media error:", err);
+      throw err;
     }
   };
 
   const createPeer = () => {
+    if (pcRef.current) return;
+
     pcRef.current = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.relay.metered.ca:80" },
@@ -109,198 +159,223 @@ export default function CallRoom({ socket }) {
     };
 
     pcRef.current.onconnectionstatechange = () => {
-      console.log("🔗 PeerConnection connectionState:", pcRef.current.connectionState);
+      log("🔗 PeerConnection connectionState:", pcRef.current.connectionState);
     };
 
     pcRef.current.oniceconnectionstatechange = () => {
-      console.log("🛰️ ICE connectionState:", pcRef.current.iceConnectionState);
+      log("🛰️ ICE connectionState:", pcRef.current.iceConnectionState);
     };
 
     pcRef.current.ontrack = (event) => {
-      console.log("🎥 REMOTE TRACK ARRIVED, kind:", event.track.kind);
+      log("🎥 REMOTE TRACK ARRIVED", "trackKind:", event.track?.kind, "streams:", event.streams?.length);
 
-      if (event.streams?.length > 0) {
-        remoteVideo.current.srcObject = event.streams[0];
+      const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
+      if (remoteVideo.current) {
+        remoteVideo.current.srcObject = stream;
+        remoteVideo.current.autoplay = true;
+        remoteVideo.current.playsInline = true;
+        remoteVideo.current.muted = false;
+
+        // Try to play and also wait for metadata (some browsers require it)
+        remoteVideo.current.onloadedmetadata = () => {
+          log("🎉 remote onloadedmetadata — attempting play()");
+          remoteVideo.current.play().catch(err => log("⚠️ remote play() error:", err));
+        };
+
+        // Force a play attempt (may be blocked but that gives a useful error)
+        setTimeout(() => {
+          remoteVideo.current.play().catch((err) => {
+            log("⚠️ remote play() attempt:", err);
+          });
+        }, 150);
       } else {
-        const ms = new MediaStream([event.track]);
-        remoteVideo.current.srcObject = ms;
+        log("⚠️ remoteVideo ref missing");
       }
     };
+
+    log("🛠️ PeerConnection created");
   };
 
   // =========================================================
-  // ADD EXPLICIT TRANSCEIVERS (IMPORTANT)
+  // EXPLICIT TRANSCEIVERS
   // =========================================================
   const addExplicitTransceivers = () => {
-    console.log("🔧 Adding explicit transceivers...");
-
-    pcRef.current.addTransceiver("video", { direction: "sendrecv" });
-    pcRef.current.addTransceiver("audio", { direction: "sendrecv" });
-
-    console.log("✅ Transceivers added");
+    if (!pcRef.current) return;
+    log("🔧 Adding explicit transceivers...");
+    try {
+      pcRef.current.addTransceiver("video", { direction: "sendrecv" });
+      pcRef.current.addTransceiver("audio", { direction: "sendrecv" });
+      log("✅ Transceivers added");
+    } catch (e) {
+      log("⚠️ addTransceiver error:", e);
+    }
   };
 
   // =========================================================
-  // ATTACH TRACKS USING REPLACE
+  // ATTACH TRACKS (replace when possible)
   // =========================================================
   const attachTracks = () => {
-    console.log("⭐ attachTracks CALLED on:", isCaller ? "Caller" : "Callee");
+    log("⭐ attachTracks CALLED on:", isCaller ? "Caller" : "Callee");
 
-    if (!localStreamRef.current || !pcRef.current) return;
+    if (!localStreamRef.current) {
+      log("⚠️ attachTracks: no local stream to attach");
+      return;
+    }
+    if (!pcRef.current) {
+      log("⚠️ attachTracks: no pcRef");
+      return;
+    }
 
     const tracks = localStreamRef.current.getTracks();
-    const senders = pcRef.current.getSenders();
-
-    console.log("🔧 Attaching tracks. Senders:", senders.length, "Tracks:", tracks.length);
+    log("🔧 Attaching tracks. current senders:", pcRef.current.getSenders().length, "local tracks:", tracks.length);
 
     tracks.forEach((track) => {
+      // try to find a sender for this kind and replace it
+      const senders = pcRef.current.getSenders();
       const sender = senders.find((s) => s.track?.kind === track.kind);
 
       if (sender) {
-        console.log(`✏️ Replacing track on sender: ${track.kind}`);
+        log(`✏️ Replacing track on sender: ${track.kind}`);
         sender.replaceTrack(track);
       } else {
-        console.warn(`⚠️ No sender found for: ${track.kind} - addTrack`);
+        log(`➕ No sender found for ${track.kind}, calling addTrack`);
         pcRef.current.addTrack(track, localStreamRef.current);
       }
     });
 
-    console.log("🎬 Tracks attached. Final senders:", pcRef.current.getSenders().length);
+    log("🎬 Tracks attached. Final senders:", pcRef.current.getSenders().length);
   };
 
   // =========================================================
-  // 5) CALLER SENDS OFFER
+  // SEND OFFER (caller)
   // =========================================================
   const sendOfferLater = () => {
-    console.log("⏳ Caller will send offer in 600ms…");
-
+    log("⏳ Caller will send offer in 400ms…");
     setTimeout(async () => {
-      console.log("📍 About to attach tracks...");
-      attachTracks();
+      try {
+        log("📍 About to attach tracks (caller)...");
+        attachTracks();
 
-      console.log("📡 Caller creating OFFER…");
-      const offer = await pcRef.current.createOffer();
-      await pcRef.current.setLocalDescription(offer);
+        log("📡 Caller creating OFFER…");
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
 
-      const transceivers = pcRef.current.getTransceivers();
-      console.log("📊 OFFER: Transceivers count:", transceivers.length);
-      transceivers.forEach((t, i) =>
-        console.log(`   [${i}] kind=${t.receiver.track?.kind}, direction=${t.direction}`)
-      );
+        const transceivers = pcRef.current.getTransceivers();
+        log("📊 OFFER: Transceivers count:", transceivers.length);
+        transceivers.forEach((t, i) => {
+          log(`   [${i}] kind=${t.receiver?.track?.kind || t.sender?.track?.kind || "unknown"}, direction=${t.direction}`);
+        });
 
-      socket.emit("offer", { roomId, sdp: offer });
-      console.log("📤 OFFER SENT");
-    }, 600);
+        socket.emit("offer", { roomId, sdp: offer });
+        log("📤 OFFER SENT");
+      } catch (err) {
+        log("❌ Error creating/sending offer:", err);
+      }
+    }, 400);
   };
 
   // =========================================================
-  // 6) CALLEE HANDLE OFFER
+  // HANDLE OFFER (callee) - robust: wait for media & transceivers
   // =========================================================
-  // async function handleOffer({ sdp }) {
-  //   console.log("🔥 OFFER received from caller");
+  async function handleOffer({ sdp }) {
+    log("🔥 OFFER received from caller");
 
-  //   if (!pcRef.current) createPeer();
+    // Ensure local media is ready
+    if (!localStreamRef.current) {
+      log("⏳ Callee waiting for media...");
+      try {
+        await initMedia();
+      } catch (e) {
+        log("⚠️ initMedia failed in handleOffer:", e);
+      }
+    }
 
-  //   await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+    // Ensure peer + transceivers exist
+    if (!pcRef.current) {
+      createPeer();
+      addExplicitTransceivers();
+    }
 
-  //   const transceivers = pcRef.current.getTransceivers();
-  //   console.log("📊 OFFER (Callee): Transceivers count:", transceivers.length);
-  //   transceivers.forEach((t, i) =>
-  //     console.log(`   [${i}] kind=${t.receiver.track?.kind}, direction=${t.direction}`)
-  //   );
+    try {
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch (e) {
+      log("❌ setRemoteDescription error:", e);
+    }
 
-  //   if (localStreamRef.current) {
-  //     console.log("📍 About to attach callee tracks...");
-  //     attachTracks();
-  //   }
+    // Attach tracks NOW (this must run)
+    log("📍 Callee attaching tracks...");
+    attachTracks();
 
-  //   while (pendingCandidates.current.length > 0) {
-  //     await pcRef.current.addIceCandidate(pendingCandidates.current.shift());
-  //   }
-
-  //   console.log("🎤 Creating ANSWER…");
-  //   const answer = await pcRef.current.createAnswer();
-  //   await pcRef.current.setLocalDescription(answer);
-
-  //   socket.emit("answer", { roomId, sdp: answer });
-  //   console.log("📤 ANSWER SENT");
-  // }
- async function handleOffer({ sdp }) {
-  console.log("🔥 OFFER received from caller");
-
-  // (1) Make sure media is ready BEFORE answering
-  if (!localStreamRef.current) {
-    console.log("⏳ Callee waiting for media to be ready...");
-    await initMedia();
-  }
-
-  // (2) Make sure PeerConnection + transceivers exist BEFORE SDP
-  if (!pcRef.current) {
-    createPeer();
-    addExplicitTransceivers();
-  }
-
-  // (3) Set the remote SDP
-  await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-
-  // (4) NOW attach tracks (this is the part NOT happening on your callee)
-  console.log("📍 Callee attaching tracks (THIS MUST RUN)...");
-  attachTracks();
-
-  // (5) Apply queued ICE candidates
-  while (pendingCandidates.current.length > 0) {
-    const cand = pendingCandidates.current.shift();
-    await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
-  }
-
-  // (6) Create + send the answer
-  console.log("🎤 Creating ANSWER…");
-  const answer = await pcRef.current.createAnswer();
-  await pcRef.current.setLocalDescription(answer);
-
-  socket.emit("answer", { roomId, sdp: answer });
-  console.log("📤 ANSWER SENT");
-}
-
-
-
-  // =========================================================
-  // 7) CALLER HANDLE ANSWER
-  // =========================================================
-  async function handleAnswer({ sdp }) {
-    console.log("📩 ANSWER received from callee");
-
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-
-    const transceivers = pcRef.current.getTransceivers();
-    console.log("📊 ANSWER: Transceivers count:", transceivers.length);
-    transceivers.forEach((t, i) =>
-      console.log(`   [${i}] kind=${t.receiver.track?.kind}, direction=${t.direction}`)
-    );
-
+    // Add queued ICE candidates
     while (pendingCandidates.current.length > 0) {
-      await pcRef.current.addIceCandidate(pendingCandidates.current.shift());
+      try {
+        const cand = pendingCandidates.current.shift();
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        log("⚠️ addIceCandidate error while draining queue:", e);
+      }
+    }
+
+    try {
+      log("🎤 Creating ANSWER…");
+      const answer = await pcRef.current.createAnswer();
+      await pcRef.current.setLocalDescription(answer);
+      socket.emit("answer", { roomId, sdp: answer });
+      log("📤 ANSWER SENT");
+    } catch (e) {
+      log("❌ Error creating/sending answer:", e);
     }
   }
 
   // =========================================================
-  // 8) ICE CANDIDATES
+  // HANDLE ANSWER (caller)
+  // =========================================================
+  async function handleAnswer({ sdp }) {
+    log("📩 ANSWER received from callee");
+
+    try {
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch (e) {
+      log("❌ setRemoteDescription on answer error:", e);
+    }
+
+    log("📊 ANSWER: transceivers:", pcRef.current.getTransceivers().length);
+    pcRef.current.getTransceivers().forEach((t, i) =>
+      log(`   [${i}] kind=${t.receiver?.track?.kind || t.sender?.track?.kind || "unknown"}, direction=${t.direction}`)
+    );
+
+    // Drain pending ICE candidates
+    while (pendingCandidates.current.length > 0) {
+      try {
+        const cand = pendingCandidates.current.shift();
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        log("⚠️ addIceCandidate error while draining queue after answer:", e);
+      }
+    }
+  }
+
+  // =========================================================
+  // ICE CANDIDATE
   // =========================================================
   async function handleICE({ candidate }) {
+    // store until remoteDescription is available
     if (!pcRef.current || !pcRef.current.remoteDescription) {
       pendingCandidates.current.push(candidate);
+      log("🔁 Queued ICE candidate (no remoteDescription yet). queueLen:", pendingCandidates.current.length);
       return;
     }
 
     try {
       await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      log("➕ added ICE candidate");
     } catch (err) {
-      console.error("❌ ICE error:", err);
+      log("❌ ICE add error:", err);
     }
   }
 
   // =========================================================
-  // 9) CLEANUP
+  // CLEANUP
   // =========================================================
   const cleanup = () => {
     try {
@@ -313,6 +388,7 @@ export default function CallRoom({ socket }) {
     } catch {}
 
     pendingCandidates.current = [];
+    log("🧹 cleanup done");
   };
 
   // =========================================================
@@ -324,14 +400,16 @@ export default function CallRoom({ socket }) {
         <h2 className="text-2xl font-semibold text-gray-800 mb-6">Video Call</h2>
 
         <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center">
+          {/* Local video box */}
+          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center relative">
             <div className="w-full h-64 md:h-96 overflow-hidden rounded-lg">
               <video ref={localVideo} autoPlay muted playsInline className="w-full h-full object-cover" />
             </div>
             <div className="absolute mt-2 ml-2 text-sm text-gray-700">You</div>
           </div>
 
-          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center">
+          {/* Remote video box */}
+          <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex items-center justify-center relative">
             <div className="w-full h-64 md:h-96 overflow-hidden rounded-lg">
               <video ref={remoteVideo} autoPlay playsInline className="w-full h-full object-cover" />
             </div>
