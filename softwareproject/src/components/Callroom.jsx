@@ -194,35 +194,72 @@ export default function CallRoom({ socket }) {
   // =========================================================
   // 6) CALLEE HANDLE OFFER
   // =========================================================
+  // async function handleOffer({ sdp }) {
+  //   console.log("🔥 OFFER received from caller");
+
+  //   if (!pcRef.current) createPeer();
+
+  //   await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+  //   const transceivers = pcRef.current.getTransceivers();
+  //   console.log("📊 OFFER (Callee): Transceivers count:", transceivers.length);
+  //   transceivers.forEach((t, i) =>
+  //     console.log(`   [${i}] kind=${t.receiver.track?.kind}, direction=${t.direction}`)
+  //   );
+
+  //   if (localStreamRef.current) {
+  //     console.log("📍 About to attach callee tracks...");
+  //     attachTracks();
+  //   }
+
+  //   while (pendingCandidates.current.length > 0) {
+  //     await pcRef.current.addIceCandidate(pendingCandidates.current.shift());
+  //   }
+
+  //   console.log("🎤 Creating ANSWER…");
+  //   const answer = await pcRef.current.createAnswer();
+  //   await pcRef.current.setLocalDescription(answer);
+
+  //   socket.emit("answer", { roomId, sdp: answer });
+  //   console.log("📤 ANSWER SENT");
+  // }
   async function handleOffer({ sdp }) {
-    console.log("🔥 OFFER received from caller");
+  console.log("🔥 OFFER received from caller");
 
-    if (!pcRef.current) createPeer();
-
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-
-    const transceivers = pcRef.current.getTransceivers();
-    console.log("📊 OFFER (Callee): Transceivers count:", transceivers.length);
-    transceivers.forEach((t, i) =>
-      console.log(`   [${i}] kind=${t.receiver.track?.kind}, direction=${t.direction}`)
-    );
-
-    if (localStreamRef.current) {
-      console.log("📍 About to attach callee tracks...");
-      attachTracks();
-    }
-
-    while (pendingCandidates.current.length > 0) {
-      await pcRef.current.addIceCandidate(pendingCandidates.current.shift());
-    }
-
-    console.log("🎤 Creating ANSWER…");
-    const answer = await pcRef.current.createAnswer();
-    await pcRef.current.setLocalDescription(answer);
-
-    socket.emit("answer", { roomId, sdp: answer });
-    console.log("📤 ANSWER SENT");
+  // Step 1: make sure media is ready BEFORE answering
+  if (!localStreamRef.current) {
+    console.log("⏳ Callee waiting for media...");
+    await initMedia();
   }
+
+  // Step 2: ensure PeerConnection exists
+  if (!pcRef.current) {
+    createPeer();
+    addExplicitTransceivers();
+  }
+
+  // Step 3: Set remote description
+  await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+
+  // Step 4: NOW attach the tracks
+  console.log("📍 Callee attaching tracks...");
+  attachTracks();
+
+  // Step 5: Apply pending ICE candidates
+  while (pendingCandidates.current.length > 0) {
+    const cand = pendingCandidates.current.shift();
+    await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
+  }
+
+  // Step 6: Create and send answer
+  console.log("🎤 Creating ANSWER…");
+  const answer = await pcRef.current.createAnswer();
+  await pcRef.current.setLocalDescription(answer);
+
+  socket.emit("answer", { roomId, sdp: answer });
+  console.log("📤 ANSWER SENT");
+}
+
 
   // =========================================================
   // 7) CALLER HANDLE ANSWER
