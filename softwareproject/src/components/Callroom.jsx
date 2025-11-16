@@ -10,57 +10,56 @@ export default function CallRoom({ socket }) {
   const localStreamRef = useRef(null);
   const pendingCandidates = useRef([]);
 
-  const [isCaller, setIsCaller] = useState(null); // null until we know role
+  const [roleKnown, setRoleKnown] = useState(false);
+  const [isCaller, setIsCaller] = useState(null); // true = caller, false = callee
 
   // ---------------------------------------------
-  // JOIN CALL ROOM
+  // JOIN CALL ROOM (use server ack to avoid race)
   // ---------------------------------------------
   useEffect(() => {
     if (!socket) return;
 
-    socket.emit("join-call", { roomId });
-
-    // Server tells how many participants are present
-    const handleRoomJoined = ({ participants }) => {
-      console.log("👥 Participants in room:", participants);
+    // Join and use a callback acknowledgement from server
+    socket.emit("join-call", { roomId }, (participants) => {
+      console.log("👥 join-call ack participants:", participants);
 
       if (participants === 1) {
-        setIsCaller(true); // first user
-      } else if (participants === 2) {
-        setIsCaller(false); // second user
+        setIsCaller(true);
+      } else {
+        setIsCaller(false);
       }
-    };
 
-    socket.on("room-joined", handleRoomJoined);
+      setRoleKnown(true);
+      // IMPORTANT: we do not init here directly, init happens in the next effect
+    });
 
-    return () => {
-      socket.off("room-joined", handleRoomJoined);
-    };
+    // cleanup nothing else here
   }, [socket, roomId]);
 
   // ---------------------------------------------
-  // WHEN CALLER/CALLEE ROLE IS KNOWN → SETUP WEBRTC
+  // Once role is known -> initialize webrtc + listeners
   // ---------------------------------------------
   useEffect(() => {
-    if (isCaller === null) return; // Wait for role
+    if (!roleKnown) return;
 
     console.log("🎯 Role decided:", isCaller ? "Caller" : "Callee");
 
-    // set up webRTC and listeners
+    // init + listeners
     (async () => {
       await initWebRTC();
       setupSocketListeners();
     })();
 
-    // cleanup listeners and connection on unmount or role change
+    // cleanup on unmount (remove socket listeners and close pc)
     return () => {
       cleanup();
+
       socket.off("offer");
       socket.off("answer");
       socket.off("ice-candidate");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCaller]);
+  }, [roleKnown]);
 
   // ---------------------------------------------
   // INIT MEDIA + PEER CONNECTION
@@ -70,14 +69,28 @@ export default function CallRoom({ socket }) {
     createPeer(); // create RTCPeerConnection
     attachTracks(); // add tracks after creating PC
 
-    // <-- FORCED OFFER: some browsers (mobile) don't trigger negotiationneeded reliably.
-    // If we're the caller, create and send the offer now (guaranteed).
+    // FORCED OFFER: if caller, wait a short moment (ensures server/room fully stable)
     if (isCaller) {
       try {
-        console.log("📡 Caller forcing offer creation...");
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
-        socket.emit("offer", { roomId, sdp: offer });
+        console.log("📡 Caller will create offer after short delay...");
+        // small delay avoids racing with socket join propagation
+        setTimeout(async () => {
+          // double-check pc exists and socket connected
+          if (!pcRef.current) return;
+          if (!socket || !socket.connected) {
+            console.warn("Socket not connected yet — skipping forced offer");
+            return;
+          }
+
+          try {
+            const offer = await pcRef.current.createOffer();
+            await pcRef.current.setLocalDescription(offer);
+            socket.emit("offer", { roomId, sdp: offer });
+            console.log("📡 Offer sent");
+          } catch (err) {
+            console.error("Error creating/sending offer:", err);
+          }
+        }, 200); // 200ms delay is usually enough
       } catch (err) {
         console.error("Error forcing offer:", err);
       }
@@ -117,11 +130,6 @@ export default function CallRoom({ socket }) {
           username: "99233f39212e9124c007bab2",
           credential: "1TiVAiSMvWI3b6ah",
         },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "99233f39212e9124c007bab2",
-          credential: "1TiVAiSMvWI3b6ah",
-        },
       ],
     });
 
@@ -141,10 +149,8 @@ export default function CallRoom({ socket }) {
       if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0];
     };
 
-    // Keep onnegotiationneeded as a fallback (some browsers do fire it)
-    pcRef.current.onnegotiationneeded = async () => {
-      if (!isCaller) return;
-    };
+    // keep onnegotiationneeded as a no-op: we force offer explicitly for caller above
+    pcRef.current.onnegotiationneeded = () => {};
   };
 
   const attachTracks = () => {
@@ -182,6 +188,7 @@ export default function CallRoom({ socket }) {
         await pcRef.current.setLocalDescription(answer);
 
         socket.emit("answer", { roomId, sdp: answer });
+        console.log("📡 Answer sent");
       } catch (err) {
         console.error("Error handling offer:", err);
       }

@@ -91,17 +91,22 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("join-call", ({ roomId }) => {
+  // When user joins a call room
+socket.on("join-call", ({ roomId }, cb) => {
   socket.join(roomId);
 
   const room = io.sockets.adapter.rooms.get(roomId);
   const participants = room ? room.size : 0;
 
-  console.log(`👥 Room ${roomId} participants:`, participants);
+  console.log(`👥 User ${socket.id} joined call room ${roomId} (participants: ${participants})`);
 
-  // Notify both users of room count
-  socket.emit("room-joined", { participants });
+  // Notify ALL OTHER participants (so they know count changed) — do NOT send to the joining socket
+  socket.to(roomId).emit("room-joined", { participants });
+
+  // Acknowledge to the joining socket with participants count (callback)
+  if (typeof cb === "function") cb(participants);
 });
+
 
   socket.on("offer", ({ roomId, sdp }) => {
     socket.to(roomId).emit("offer", { sdp });
