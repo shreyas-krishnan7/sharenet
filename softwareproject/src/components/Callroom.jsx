@@ -356,26 +356,51 @@ export default function CallRoom({ socket }) {
       }
     };
 
+    pcRef.current.onconnectionstatechange = () => {
+      console.log("🔗 PeerConnection connectionState:", pcRef.current.connectionState);
+    };
+
+    pcRef.current.oniceconnectionstatechange = () => {
+      console.log("🛰️ ICE connectionState:", pcRef.current.iceConnectionState);
+    };
+
     pcRef.current.ontrack = (event) => {
       console.log("🎥 Remote track received", event);
       try {
         // Prefer full stream if provided
+        let streamToUse = null;
         if (event.streams && event.streams[0]) {
-          remoteVideo.current.srcObject = event.streams[0];
+          streamToUse = event.streams[0];
         } else if (event.track) {
           // Fallback: create a stream from the single track
-          const ms = new MediaStream([event.track]);
-          remoteVideo.current.srcObject = ms;
-        } else {
-          console.warn("ontrack received no streams or track", event);
+          streamToUse = new MediaStream([event.track]);
         }
 
-        // Attempt to play (autoplay may be blocked if not muted)
+        if (!streamToUse) {
+          console.warn("ontrack received no streams or track", event);
+          return;
+        }
+
+        // Temporarily mute remote video to allow autoplay in many browsers
+        try {
+          remoteVideo.current.muted = true;
+        } catch (e) {}
+
+        remoteVideo.current.srcObject = streamToUse;
+
+        // play and then unmute when playback starts
         const playPromise = remoteVideo.current.play();
         if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.warn("Remote video play() blocked:", err);
-          });
+          playPromise
+            .then(() => {
+              console.log("▶️ Remote video playing");
+              try {
+                remoteVideo.current.muted = false;
+              } catch (e) {}
+            })
+            .catch((err) => {
+              console.warn("Remote video play() blocked or errored:", err);
+            });
         }
       } catch (err) {
         console.error("Error setting remote stream:", err);
@@ -387,10 +412,12 @@ export default function CallRoom({ socket }) {
     if (!localStreamRef.current || !pcRef.current) return;
 
     localStreamRef.current.getTracks().forEach((track) => {
-      pcRef.current.addTrack(track, localStreamRef.current);
+      console.log("➕ Attaching track to PeerConnection:", track.kind, track);
+      const sender = pcRef.current.addTrack(track, localStreamRef.current);
+      console.log("   -> sender added:", sender && sender.track && sender.track.kind);
     });
 
-    console.log("🎬 Tracks attached");
+    console.log("🎬 Tracks attached (senders):", pcRef.current.getSenders().map(s => s.track && s.track.kind));
   };
 
   // =========================================================
