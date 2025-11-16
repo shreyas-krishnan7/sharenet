@@ -381,23 +381,15 @@ export default function CallRoom({ socket }) {
   const attachTracks = () => {
     if (!localStreamRef.current || !pcRef.current) return;
 
-    const senders = pcRef.current.getSenders();
     const tracks = localStreamRef.current.getTracks();
-
-    console.log("🔧 Attaching tracks. Senders:", senders.length, "Tracks:", tracks.length);
+    console.log("🔧 Adding tracks directly. Tracks:", tracks.length);
 
     tracks.forEach((track) => {
-      const sender = senders.find((s) => s.track && s.track.kind === track.kind);
-      if (sender) {
-        console.log("✏️ Replacing track on sender:", track.kind);
-        sender.replaceTrack(track);
-      } else {
-        console.log("❌ No sender found for:", track.kind, "- addTrack");
-        pcRef.current.addTrack(track, localStreamRef.current);
-      }
+      console.log("   ➕ addTrack:", track.kind);
+      pcRef.current.addTrack(track, localStreamRef.current);
     });
 
-    console.log("🎬 Tracks attached. Final senders:", pcRef.current.getSenders().length);
+    console.log("🎬 Tracks added. Senders:", pcRef.current.getSenders().length);
   };
 
   // =========================================================
@@ -408,12 +400,6 @@ export default function CallRoom({ socket }) {
 
     setTimeout(async () => {
       try {
-        // **CRITICAL FIX**: Add transceivers explicitly FIRST
-        console.log("🔧 Adding explicit transceivers...");
-        pcRef.current.addTransceiver('video', { direction: 'sendrecv' });
-        pcRef.current.addTransceiver('audio', { direction: 'sendrecv' });
-        console.log("✅ Transceivers added");
-
         // IMPORTANT: attach tracks HERE (not earlier)
         console.log("📍 About to attach tracks...");
         attachTracks();
