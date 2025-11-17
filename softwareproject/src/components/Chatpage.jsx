@@ -18,13 +18,13 @@ export default function SharentChat({ socket }) {
   const targetPeerIdRef = useRef(null);
   const messagesEndRef = useRef(null);
   // Get local/public IP
-  const [localIP, setLocalIP] = useState(null);
+  const [localIp, setLocalIp] = useState(null);
 
   useEffect(() => {
     fetch("https://api.ipify.org?format=json")
       .then((res) => res.json())
-      .then((data) => setLocalIP(data.ip))
-      .catch(() => setLocalIP(null));
+      .then((data) => setLocalIp(data.ip))
+      .catch(() => setLocalIp(null));
   }, []);
   
   
@@ -46,7 +46,7 @@ export default function SharentChat({ socket }) {
       id: storedUser?.id,
       name: storedUser?.name || "Guest User",
       email: storedUser?.email || "guest@example.com",
-      localIP: localIP, // 🔥 IMPORTANT
+      localIp: localIp, // 🔥 IMPORTANT
       avatar:
         storedUser?.name
           ?.split(" ")
@@ -59,7 +59,7 @@ export default function SharentChat({ socket }) {
 
     // 🔥 Prevent double join on re-renders
     if (!socket.hasJoined) {
-      socket.emit("join", { ...me, localIP });
+      socket.emit("join", { ...me, localIp });
 
       socket.hasJoined = true;
     }
@@ -297,10 +297,10 @@ export default function SharentChat({ socket }) {
       );
     };
 
-    if (!isSameNetwork(localIP, user.localIP)) {
-      console.log("localIp:",localIP)
-      console.log("user.localIp:",user.localIP)
-      alert("❌ Can't connect — user is not on the same local network (LAN)." , localIP, user.localIP);
+    if (!isSameNetwork(localIp, user.localIp)) {
+      console.log("localIp:",localIp)
+      console.log("user.localIp:",user.localIp)
+      alert("❌ Can't connect — user is not on the same local network (LAN)." , localIp, user.localIp);
       return;
     }
 

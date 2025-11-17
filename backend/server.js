@@ -61,17 +61,30 @@ io.on("connection", (socket) => {
   // Join platform (presence)
   // -------------------------
   socket.on("join", (user) => {
-    try {
-      // store both maps
-      onlineBySocket[socket.id] = { ...user, socketId: socket.id };
-      if (user?.id) socketByUserId[user.id] = socket.id;
+  try {
+    // Make sure we store LOCAL IP too
+    const storedUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      localIp: user.localIp,    // 👈🔥 store LAN IP
+      socketId: socket.id,
+    };
 
-      console.log(`📌 User online: ${user.name} (${user.id}) -> socket ${socket.id}`);
-      io.emit("online-users", Object.values(onlineBySocket));
-    } catch (err) {
-      console.error("Error in join:", err);
+    onlineBySocket[socket.id] = storedUser;
+
+    if (user?.id) {
+      socketByUserId[user.id] = socket.id;
     }
-  });
+
+    console.log(`📌 User online: ${user.name} (${user.id}) [IP: ${user.localIp}] -> socket ${socket.id}`);
+
+    io.emit("online-users", Object.values(onlineBySocket));
+  } catch (err) {
+    console.error("Error in join:", err);
+  }
+});
+
 
   // -------------------------
   // CHAT (datachannel) signaling
