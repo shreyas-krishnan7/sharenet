@@ -439,7 +439,9 @@ export default function CallRoom() {
   const [error, setError] = useState(null);
 
   const user = JSON.parse(localStorage.getItem("userInfo"));
-  const identity = `${user?.id || "user"}`;
+  // Add unique suffix to identity to allow same user on multiple devices
+  const sessionId = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`).current;
+  const identity = `${user?.id || "user"}_${sessionId}`;
 
   // Track mounted elements to avoid duplicates
   const localTracksRef = useRef(new Set());
