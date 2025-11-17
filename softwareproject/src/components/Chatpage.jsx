@@ -29,85 +29,96 @@ export default function SharentChat({ socket }) {
 
   // ✅ Initialize user ONLY (socket already exists)
   useEffect(() => {
-  if (!socket) return;
+    if (!socket) return;
 
-  const storedUser = JSON.parse(localStorage.getItem("userInfo"));
-  const me = {
-    id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
-    name: storedUser?.name || "Guest User",
-    email: storedUser?.email || "guest@example.com",
-    avatar:
-      storedUser?.name
-        ?.split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase() || "GU",
-  };
+    const storedUser = JSON.parse(localStorage.getItem("userInfo"));
+    const me = {
+      id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
+      name: storedUser?.name || "Guest User",
+      email: storedUser?.email || "guest@example.com",
+      avatar:
+        storedUser?.name
+          ?.split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase() || "GU",
+    };
 
-  setCurrentUser(me);
+    setCurrentUser(me);
 
-  // 🔥 Prevent double join on re-renders
-  if (!socket.hasJoined) {
-    socket.emit("join", me);
-    socket.hasJoined = true;
-  }
-
-  // ----------------------
-  // ONLINE USERS
-  // ----------------------
-  const handleOnlineUsers = (users) => {
-    const filtered = users.filter((u) => u.id !== me.id);
-    setOnlineUsers(filtered);
-  };
-
-  socket.on("online-users", handleOnlineUsers);
-
-  // ----------------------
-  // CHAT SIGNALING
-  // ----------------------
-  const handleOffer = async ({ offer, from }) => {
-    createPeerConnection(from);
-    await pcRef.current.setRemoteDescription(offer);
-    const answer = await pcRef.current.createAnswer();
-    await pcRef.current.setLocalDescription(answer);
-    socket.emit("chat-answer", { to: from, from: me.id, answer });
-  };
-
-  const handleAnswer = async ({ answer }) => {
-    if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
-  };
-
-  const handleCandidate = async ({ candidate }) => {
-    if (candidate && pcRef.current) {
-      await pcRef.current.addIceCandidate(candidate);
+    // 🔥 Prevent double join on re-renders
+    if (!socket.hasJoined) {
+      socket.emit("join", me);
+      socket.hasJoined = true;
     }
-  };
 
-  socket.on("chat-offer", handleOffer);
-  socket.on("chat-answer", handleAnswer);
-  socket.on("chat-candidate", handleCandidate);
+    // ----------------------
+    // ONLINE USERS
+    // ----------------------
+    const handleOnlineUsers = (users) => {
+      const filtered = users.filter((u) => u.id !== me.id);
+      setOnlineUsers(filtered);
+    };
 
-  // ----------------------
-  // CALL SIGNALING
-  // ----------------------
-  const handleIncomingCall = ({ roomId }) => {
-    setIncomingCall({ roomId });
-  };
+    socket.on("online-users", handleOnlineUsers);
 
-  socket.on("incoming-call", handleIncomingCall);
+    // ----------------------
+    // CHAT SIGNALING
+    // ----------------------
+    const handleOffer = async ({ offer, from }) => {
+      createPeerConnection(from);
+      await pcRef.current.setRemoteDescription(offer);
+      const answer = await pcRef.current.createAnswer();
+      await pcRef.current.setLocalDescription(answer);
+      socket.emit("chat-answer", { to: from, from: me.id, answer });
+    };
 
-  // ----------------------
-  // CLEANUP — prevents duplicate listeners!
-  // ----------------------
-  return () => {
-    socket.off("online-users", handleOnlineUsers);
-    socket.off("chat-offer", handleOffer);
-    socket.off("chat-answer", handleAnswer);
-    socket.off("chat-candidate", handleCandidate);
-    socket.off("incoming-call", handleIncomingCall);
-  };
-}, [socket]);
+    const handleAnswer = async ({ answer }) => {
+      if (pcRef.current) await pcRef.current.setRemoteDescription(answer);
+    };
 
+    const handleCandidate = async ({ candidate }) => {
+      if (candidate && pcRef.current) {
+        await pcRef.current.addIceCandidate(candidate);
+      }
+    };
+
+    socket.on("chat-offer", handleOffer);
+    socket.on("chat-answer", handleAnswer);
+    socket.on("chat-candidate", handleCandidate);
+
+    // ----------------------
+    // CALL SIGNALING
+    // ----------------------
+    const handleIncomingCall = ({ roomId, callerId }) => {
+      const caller =
+        onlineUsers.find((u) => u.id === callerId) ||
+        onlineUsers.find((u) => u.socketId === callerId);
+
+      setIncomingCall({
+        roomId,
+        callerName: caller?.name || "Unknown User",
+      });
+    };
+
+    socket.on("incoming-call", handleIncomingCall);
+
+    // ----------------------
+    // CLEANUP — prevents duplicate listeners!
+    // ----------------------
+    return () => {
+      socket.off("online-users", handleOnlineUsers);
+      socket.off("chat-offer", handleOffer);
+      socket.off("chat-answer", handleAnswer);
+      socket.off("chat-candidate", handleCandidate);
+      socket.off("incoming-call", handleIncomingCall);
+    };
+  }, [socket]);
+
+  function generateRoomId(id1, id2) {
+    const sorted = [id1, id2].sort();
+    return `${sorted[0]}_${sorted[1]}`;
+  }
 
   // ---------------------------
   // 📞 Start Call
@@ -115,8 +126,13 @@ export default function SharentChat({ socket }) {
   const startCall = (receiver) => {
     if (!socket || !receiver?.id) return;
 
-    const roomId = `${socket.id}-${receiver.id}`;
-    socket.emit("call-user", { receiverId: receiver.id, roomId });
+    const roomId = generateRoomId(currentUser.id, receiver.id);
+
+    socket.emit("call-user", {
+      receiverId: receiver.id,
+      roomId,
+    });
+
     navigate(`/call/${roomId}`);
   };
 
@@ -124,6 +140,7 @@ export default function SharentChat({ socket }) {
     navigate(`/call/${incomingCall.roomId}`);
     setIncomingCall(null);
   };
+  const rejectCall = () => setIncomingCall(null);
 
   // ---------------------------
   // WebRTC Functions
@@ -174,81 +191,80 @@ export default function SharentChat({ socket }) {
     dcRef.current = channel;
 
     channel.onmessage = (e) => {
-  // ----- CASE 1: FILE CHUNK (ArrayBuffer) -----
-  if (e.data instanceof ArrayBuffer) {
-    if (incomingFileRef.current) {
-      incomingFileRef.current.chunks.push(e.data);
-    }
-    return;
-  }
+      // ----- CASE 1: FILE CHUNK (ArrayBuffer) -----
+      if (e.data instanceof ArrayBuffer) {
+        if (incomingFileRef.current) {
+          incomingFileRef.current.chunks.push(e.data);
+        }
+        return;
+      }
 
-  // ----- CASE 2: STRING MESSAGES -----
-  let msgData;
-  try {
-    msgData = JSON.parse(e.data);
-  } catch {
-    msgData = null;
-  }
+      // ----- CASE 2: STRING MESSAGES -----
+      let msgData;
+      try {
+        msgData = JSON.parse(e.data);
+      } catch {
+        msgData = null;
+      }
 
-  // ----- FILE META -----
-  if (msgData?.type === "file-meta") {
-    incomingFileRef.current = {
-      name: msgData.name,
-      size: msgData.size,
-      mime: msgData.mime,
-      totalChunks: msgData.totalChunks,
-      chunks: [],
+      // ----- FILE META -----
+      if (msgData?.type === "file-meta") {
+        incomingFileRef.current = {
+          name: msgData.name,
+          size: msgData.size,
+          mime: msgData.mime,
+          totalChunks: msgData.totalChunks,
+          chunks: [],
+        };
+        return;
+      }
+
+      // ----- FILE END -----
+      if (msgData?.type === "file-end") {
+        const file = incomingFileRef.current;
+        const blob = new Blob(file.chunks, { type: file.mime });
+        const fileURL = URL.createObjectURL(blob);
+
+        const now = new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        setMessages((prev) => ({
+          ...prev,
+          [targetPeerIdRef.current]: [
+            ...(prev[targetPeerIdRef.current] || []),
+            {
+              text: `📎 ${file.name}`,
+              fileURL,
+              isFile: true,
+              fileName: file.name,
+              time: now,
+              sender: targetPeerIdRef.current,
+            },
+          ],
+        }));
+
+        incomingFileRef.current = null;
+        return;
+      }
+
+      // ----- NORMAL TEXT MESSAGE -----
+      const now = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const fromId = targetPeerIdRef.current;
+
+      setMessages((prev) => ({
+        ...prev,
+        [fromId]: [
+          ...(prev[fromId] || []),
+          { text: e.data, time: now, sender: fromId },
+        ],
+      }));
     };
-    return;
-  }
-
-  // ----- FILE END -----
-  if (msgData?.type === "file-end") {
-    const file = incomingFileRef.current;
-    const blob = new Blob(file.chunks, { type: file.mime });
-    const fileURL = URL.createObjectURL(blob);
-
-    const now = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    setMessages((prev) => ({
-      ...prev,
-      [targetPeerIdRef.current]: [
-        ...(prev[targetPeerIdRef.current] || []),
-        {
-          text: `📎 ${file.name}`,
-          fileURL,
-          isFile: true,
-          fileName: file.name,
-          time: now,
-          sender: targetPeerIdRef.current,
-        },
-      ],
-    }));
-
-    incomingFileRef.current = null;
-    return;
-  }
-
-  // ----- NORMAL TEXT MESSAGE -----
-  const now = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const fromId = targetPeerIdRef.current;
-
-  setMessages((prev) => ({
-    ...prev,
-    [fromId]: [
-      ...(prev[fromId] || []),
-      { text: e.data, time: now, sender: fromId },
-    ],
-  }));
-};
-
   };
 
   const startCallWith = async (user) => {
@@ -290,73 +306,71 @@ export default function SharentChat({ socket }) {
     setMessage("");
   };
   const handleFileSelect = async (e) => {
-  const file = e.target.files[0];
-  if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
-    alert("⚠️ DataChannel not ready or no file selected.");
-    return;
-  }
-
-  const chunkSize = 16 * 1024; // 16KB
-  const fileReader = new FileReader();
-
-  fileReader.onload = async (event) => {
-    const buffer = event.target.result;
-    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-
-    // Send file metadata first
-    dcRef.current.send(
-      JSON.stringify({
-        type: "file-meta",
-        name: file.name,
-        size: file.size,
-        mime: file.type,
-        totalChunks,
-      })
-    );
-
-    // Send chunks
-    let offset = 0;
-    while (offset < buffer.byteLength) {
-      const chunk = buffer.slice(offset, offset + chunkSize);
-      dcRef.current.send(chunk);
-      offset += chunkSize;
+    const file = e.target.files[0];
+    if (!file || !dcRef.current || dcRef.current.readyState !== "open") {
+      alert("⚠️ DataChannel not ready or no file selected.");
+      return;
     }
 
-    // Send end marker
-    dcRef.current.send(JSON.stringify({ type: "file-end" }));
+    const chunkSize = 16 * 1024; // 16KB
+    const fileReader = new FileReader();
 
-    console.log(`✅ File sent: ${file.name}`);
-    e.target.value = null;
+    fileReader.onload = async (event) => {
+      const buffer = event.target.result;
+      const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
 
-    // Display in sender chat
-    const now = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    const newMsg = {
-      text: `📎 Sent file: ${file.name}`,
-      time: now,
-      sender: currentUser?.id,
-      isFile: true,
-      fileName: file.name,
+      // Send file metadata first
+      dcRef.current.send(
+        JSON.stringify({
+          type: "file-meta",
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          totalChunks,
+        })
+      );
+
+      // Send chunks
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        dcRef.current.send(chunk);
+        offset += chunkSize;
+      }
+
+      // Send end marker
+      dcRef.current.send(JSON.stringify({ type: "file-end" }));
+
+      console.log(`✅ File sent: ${file.name}`);
+      e.target.value = null;
+
+      // Display in sender chat
+      const now = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const newMsg = {
+        text: `📎 Sent file: ${file.name}`,
+        time: now,
+        sender: currentUser?.id,
+        isFile: true,
+        fileName: file.name,
+      };
+
+      setMessages((prev) => ({
+        ...prev,
+        [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
+      }));
     };
 
-    setMessages((prev) => ({
-      ...prev,
-      [selectedUser.id]: [...(prev[selectedUser.id] || []), newMsg],
-    }));
+    fileReader.readAsArrayBuffer(file);
   };
-
-  fileReader.readAsArrayBuffer(file);
-};
-const handleKeyPress = (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    handleSendMessage();
-  }
-};
-
-
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   const cleanupPeerConnection = () => {
     try {
@@ -596,7 +610,7 @@ const handleKeyPress = (e) => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-lg text-center animate-fadeIn">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Incoming Call...
+              {incomingCall?.callerName} is calling you...
             </h2>
 
             <button
@@ -605,11 +619,16 @@ const handleKeyPress = (e) => {
             >
               Accept
             </button>
+
+            <button
+              className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg"
+              onClick={rejectCall}
+            >
+              Reject
+            </button>
           </div>
         </div>
       )}
-
     </div>
   );
 }
-

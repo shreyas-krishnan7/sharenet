@@ -1,14 +1,17 @@
 import express from "express";
-import dotenv from "dotenv";
+import "./loadenv.js";
 import cors from "cors";
 import connectDB from "./config/db.js";
 import userRoutes from "./routes/userroutes.js";
+import twilioRoute from "./routes/twilio.js";
+
 
 import { createServer } from "http";
 import { Server } from "socket.io";
 
-dotenv.config();
+// dotenv.config();
 connectDB();
+console.log("SID:", process.env.TWILIO_ACCOUNT_SID);
 
 const app = express();
 
@@ -41,6 +44,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+
+app.use("/twilio", twilioRoute);
+
 
 // In-memory stores
 // map socketId -> userObj { id, name, email, socketId }
