@@ -487,20 +487,26 @@ export default function CallRoom() {
         // 3️⃣ Attach Local Video
         log("📹 Attaching local tracks...");
         twilioRoom.localParticipant.videoTracks.forEach((publication) => {
-          const videoElement = publication.track.attach();
-          videoElement.style.width = "100%";
-          videoElement.style.height = "100%";
-          videoElement.style.objectFit = "cover";
-          if (localVideoRef.current && !localTracksRef.current.has(publication.track.sid)) {
-            localVideoRef.current.innerHTML = ""; // Clear previous
-            localVideoRef.current.appendChild(videoElement);
-            localTracksRef.current.add(publication.track.sid);
-            log("✅ Local video attached");
+          const track = publication.track;
+          const trackId = track.sid || track.id || Math.random().toString();
+          
+          if (!localTracksRef.current.has(trackId)) {
+            const videoElement = track.attach();
+            videoElement.style.width = "100%";
+            videoElement.style.height = "100%";
+            videoElement.style.objectFit = "cover";
+            if (localVideoRef.current) {
+              localVideoRef.current.innerHTML = ""; // Clear previous
+              localVideoRef.current.appendChild(videoElement);
+              localTracksRef.current.add(trackId);
+              log("✅ Local video attached:", trackId);
+            }
           }
         });
 
         twilioRoom.localParticipant.audioTracks.forEach((publication) => {
-          publication.track.attach();
+          const track = publication.track;
+          track.attach();
           log("✅ Local audio attached");
         });
 
@@ -537,14 +543,17 @@ export default function CallRoom() {
 
       // Attach video track
       participant.videoTracks.forEach((publication) => {
-        if (!remoteTracksRef.current.has(publication.track.sid)) {
-          const videoElement = publication.track.attach();
+        const track = publication.track;
+        const trackId = track.sid || track.id || Math.random().toString();
+        
+        if (!remoteTracksRef.current.has(trackId)) {
+          const videoElement = track.attach();
           videoElement.style.width = "100%";
           videoElement.style.height = "100%";
           videoElement.style.objectFit = "cover";
           if (remoteVideoRef.current) {
             remoteVideoRef.current.appendChild(videoElement);
-            remoteTracksRef.current.add(publication.track.sid);
+            remoteTracksRef.current.add(trackId);
             log(`✅ Remote video attached: ${participant.sid}`);
           }
         }
@@ -552,23 +561,29 @@ export default function CallRoom() {
 
       // Handle new tracks when published
       participant.on("trackSubscribed", (track) => {
-        if (track.kind === "video" && !remoteTracksRef.current.has(track.sid)) {
-          const videoElement = track.attach();
-          videoElement.style.width = "100%";
-          videoElement.style.height = "100%";
-          videoElement.style.objectFit = "cover";
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.appendChild(videoElement);
-            remoteTracksRef.current.add(track.sid);
-            log(`✅ Remote track subscribed: ${track.sid}`);
+        if (track.kind === "video") {
+          const trackId = track.sid || track.id || Math.random().toString();
+          if (!remoteTracksRef.current.has(trackId)) {
+            const videoElement = track.attach();
+            videoElement.style.width = "100%";
+            videoElement.style.height = "100%";
+            videoElement.style.objectFit = "cover";
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.appendChild(videoElement);
+              remoteTracksRef.current.add(trackId);
+              log(`✅ Remote track subscribed: ${trackId}`);
+            }
           }
         }
       });
 
       // Handle track unsubscription
       participant.on("trackUnsubscribed", (track) => {
-        remoteTracksRef.current.delete(track.sid);
-        log(`⏹️ Remote track unsubscribed: ${track.sid}`);
+        const trackId = track.sid || track.id;
+        if (trackId) {
+          remoteTracksRef.current.delete(trackId);
+        }
+        log(`⏹️ Remote track unsubscribed`);
       });
     };
 
