@@ -6,6 +6,7 @@ import Signup from './components/Signup.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Chatpage from './components/Chatpage.jsx'
 import CallRoom from './components/Callroom.jsx'
+import AudioCallRoom from './components/Audioroom.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 import { io } from "socket.io-client";
