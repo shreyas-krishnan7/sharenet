@@ -33,7 +33,7 @@ export default function SharentChat({ socket }) {
 
     const storedUser = JSON.parse(localStorage.getItem("userInfo"));
     const me = {
-      id: storedUser?.email || `user_${Math.floor(Math.random() * 1000)}`,
+      id: storedUser?.id ,
       name: storedUser?.name || "Guest User",
       email: storedUser?.email || "guest@example.com",
       avatar:
