@@ -26,7 +26,8 @@ export default function SharentChat({ socket }) {
       .then((data) => setLocalIP(data.ip))
       .catch(() => setLocalIP(null));
   }, []);
-
+  
+  
   // Auto scroll
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -297,7 +298,7 @@ export default function SharentChat({ socket }) {
     };
 
     if (!isSameNetwork(localIP, user.localIP)) {
-      alert("❌ Can't connect — user is not on the same local network (LAN).");
+      alert("❌ Can't connect — user is not on the same local network (LAN)." , localIP, user.localIP);
       return;
     }
 
