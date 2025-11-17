@@ -296,15 +296,16 @@ export default function CallRoom({ socket }) {
       addExplicitTransceivers();
     }
 
+    // ATTACH TRACKS FIRST (before setRemoteDescription)
+    // This ensures callee's tracks are registered as senders before processing offer
+    log("📍 Callee attaching tracks BEFORE setRemoteDescription...");
+    attachTracks();
+
     try {
       await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
     } catch (e) {
       log("❌ setRemoteDescription error:", e);
     }
-
-    // Attach tracks NOW (this must run)
-    log("📍 Callee attaching tracks...");
-    attachTracks();
 
     // Add queued ICE candidates
     while (pendingCandidates.current.length > 0) {
