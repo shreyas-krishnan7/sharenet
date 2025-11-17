@@ -707,15 +707,17 @@ export default function SharentChat({ socket }) {
   const targetPeerIdRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  const [localIp, setLocalIp] = useState(null);
+  // const [localIp, setLocalIp] = useState(null);
+
+  
 
   // Fetch PUBLIC/LAN IP FIRST before joining
-  useEffect(() => {
-    fetch("https://api.ipify.org?format=json")
-      .then((res) => res.json())
-      .then((data) => setLocalIp(data.ip))
-      .catch(() => setLocalIp(null));
-  }, []);
+  // useEffect(() => {
+  //   fetch("https://api.ipify.org?format=json")
+  //     .then((res) => res.json())
+  //     .then((data) => setLocalIp(data.ip))
+  //     .catch(() => setLocalIp(null));
+  // }, []);
 
   // Auto scroll chat
   const scrollToBottom = () => {
@@ -751,7 +753,7 @@ export default function SharentChat({ socket }) {
       socket.emit("join", me); // send IP now
       socket.hasJoined = true;
     }
-  }, [socket, localIp]); // runs only after IP obtained
+  }, [socket]); // runs only after IP obtained
 
   // -----------------------------------------
   // SOCKET LISTENERS (no join here anymore)
@@ -816,25 +818,25 @@ export default function SharentChat({ socket }) {
   // LAN CHECK + START CHAT CONNECTION
   // -----------------------------------
   const startCallWith = async (user) => {
-    const isSameNetwork = (ip1, ip2) => {
-      if (!ip1 || !ip2) return false;
-      return (
-        ip1.split(".").slice(0, 3).join(".") ===
-        ip2.split(".").slice(0, 3).join(".")
-      );
-    };
+    // const isSameNetwork = (ip1, ip2) => {
+    //   if (!ip1 || !ip2) return false;
+    //   return (
+    //     ip1.split(".").slice(0, 3).join(".") ===
+    //     ip2.split(".").slice(0, 3).join(".")
+    //   );
+    // };
 
-    if (!isSameNetwork(localIp, user.localIp)) {
-      console.log("localIp:", localIp);
-      console.log("user.localIp:", user.localIp);
-      alert(
-        "❌ Can't connect — user is not on the same local network (LAN).\n" +
-          localIp +
-          " vs " +
-          user.localIp
-      );
-      return;
-    }
+    // if (!isSameNetwork(localIp, user.localIp)) {
+    //   console.log("localIp:", localIp);
+    //   console.log("user.localIp:", user.localIp);
+    //   alert(
+    //     "❌ Can't connect — user is not on the same local network (LAN).\n" +
+    //       localIp +
+    //       " vs " +
+    //       user.localIp
+    //   );
+    //   return;
+    // }
 
     setSelectedUser(user);
     createPeerConnection(user.id);

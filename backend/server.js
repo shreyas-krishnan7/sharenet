@@ -67,7 +67,7 @@ io.on("connection", (socket) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      localIp: user.localIp,    // 👈🔥 store LAN IP
+      // localIp: user.localIp,    // 👈🔥 store LAN IP
       socketId: socket.id,
     };
 
@@ -77,7 +77,7 @@ io.on("connection", (socket) => {
       socketByUserId[user.id] = socket.id;
     }
 
-    console.log(`📌 User online: ${user.name} (${user.id}) [IP: ${user.localIp}] -> socket ${socket.id}`);
+    // console.log(`📌 User online: ${user.name} (${user.id}) -> socket ${socket.id}`);
 
     io.emit("online-users", Object.values(onlineBySocket));
   } catch (err) {
