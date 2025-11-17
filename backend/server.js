@@ -141,11 +141,14 @@ io.on("connection", (socket) => {
   socket.on("call-user", ({ receiverId, roomId, callType }) => {
   try {
     const targetSocket = socketByUserId[receiverId];
+    const callerInfo = onlineBySocket[socket.id]; // 🔥 GET CALLER INFO FROM SERVER
+    
     if (targetSocket) {
       io.to(targetSocket).emit("incoming-call", {
         roomId,
         callerId: socket.id,
-        callType   // 🔥 SEND CALL TYPE TO CALLEE
+        callerName: callerInfo?.name || "Unknown User", // 🔥 SEND CALLER NAME
+        callType,
       });
       console.log(
         `📞 call-user (${callType}) -> incoming-call: ${socket.id} -> ${receiverId} (room ${roomId})`

@@ -90,15 +90,11 @@ export default function SharentChat({ socket }) {
     // ----------------------
     // CALL SIGNALING
     // ----------------------
-    const handleIncomingCall = ({ roomId, callerId, callType }) => {
-      const caller =
-        onlineUsers.find((u) => u.id === callerId) ||
-        onlineUsers.find((u) => u.socketId === callerId);
-
+    const handleIncomingCall = ({ roomId, callerId, callerName, callType }) => {
       setIncomingCall({
         roomId,
-        callerName: caller?.name || "Unknown User",
-        callType: callType || "video", // 🔥 STORE CALL TYPE
+        callerName: callerName || "Unknown User", // 🔥 USE CALLER NAME FROM SERVER
+        callType: callType || "video",
       });
     };
 
