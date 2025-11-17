@@ -6,6 +6,11 @@ const { AccessToken } = jwt;
 const { VideoGrant } = AccessToken;
 
 const router = express.Router();
+console.log("TOKEN CHECK");
+console.log("ACCOUNT:", ACCOUNT_SID);
+console.log("KEY SID:", API_KEY_SID);
+console.log("KEY SECRET LENGTH:", API_KEY_SECRET?.length);
+
 
 const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const API_KEY_SID = process.env.TWILIO_API_KEY_SID;
