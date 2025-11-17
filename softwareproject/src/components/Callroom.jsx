@@ -1053,8 +1053,19 @@ export default function CallRoom() {
       <button
         onClick={() => {
           log("End Call button clicked");
-          if (room) room.disconnect();
-          navigate("/");
+          if (room) {
+            log("Disconnecting from room...");
+            room.disconnect();
+            
+            // Force cleanup
+            setTimeout(() => {
+              setRoom(null);
+              setParticipants([]);
+              navigate("/");
+            }, 500);
+          } else {
+            navigate("/");
+          }
         }}
         className="px-8 py-3 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
       >

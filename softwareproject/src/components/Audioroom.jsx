@@ -171,8 +171,20 @@ export default function AudioCallRoom() {
       {/* End Call Button */}
       <button
         onClick={() => {
-          if (room) room.disconnect();
-          navigate("/");
+          log("End Call button clicked");
+          if (room) {
+            log("Disconnecting from audio room...");
+            room.disconnect();
+            
+            // Force cleanup
+            setTimeout(() => {
+              setRoom(null);
+              setParticipants([]);
+              navigate("/");
+            }, 500);
+          } else {
+            navigate("/");
+          }
         }}
         className="px-8 py-3 mt-8 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
       >
