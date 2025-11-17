@@ -183,7 +183,7 @@ const Login = () => {
       const { data } = await axios.post(`${BACKEND_URL}/api/users/login`, formData);
 
       // Save token in local storage
-      localStorage.setItem('userInfo', JSON.stringify({'name': data.name, 'token': data.token}));
+      localStorage.setItem('userInfo', JSON.stringify({ 'id': data._id, 'name': data.name, 'token': data.token}));
 
       // Show success toast
       toast.success('Logged in successfully!', { position: 'top-center' });

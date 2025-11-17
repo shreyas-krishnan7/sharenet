@@ -50,7 +50,7 @@ const Signup = () => {
       });
 
       // Save JWT token in localStorage - session remembrance
-      localStorage.setItem('userInfo', JSON.stringify({'name': data.name, 'token': data.token}));
+      localStorage.setItem('userInfo', JSON.stringify({ 'id': data._id, 'name': data.name, 'token': data.token}));
 
       // Show success toast
       toast.success(' Account created successfully!', { position: 'top-center' });
