@@ -298,6 +298,8 @@ export default function SharentChat({ socket }) {
     };
 
     if (!isSameNetwork(localIP, user.localIP)) {
+      console.log("localIp:",localIP)
+      console.log("user.localIp:",user.localIP)
       alert("❌ Can't connect — user is not on the same local network (LAN)." , localIP, user.localIP);
       return;
     }
