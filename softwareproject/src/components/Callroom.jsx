@@ -668,7 +668,6 @@
 //     </div>
 //   );
 // }
-
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { connect } from "twilio-video";
@@ -684,241 +683,322 @@ export default function CallRoom() {
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState([]);
 
   const user = JSON.parse(localStorage.getItem("userInfo"));
-  
-  // ✅ FIX: Create a unique identity by adding a timestamp and random string
-  // This ensures each connection has a unique identity even if the same user opens multiple tabs
-  const identity = user?.id 
-    ? `${user.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    : `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const identity = user?.id ? `user_${user.id}` : `guest_${Date.now()}`;
 
-  const log = (...args) => console.log("🎥 Twilio:", ...args);
+  // Enhanced logging with UI display
+  const log = (...args) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const message = args.join(" ");
+    console.log(`[${timestamp}] 🎥 Twilio:`, ...args);
+    setDebugInfo(prev => [...prev, `[${timestamp}] ${message}`].slice(-20)); // Keep last 20 logs
+  };
 
   useEffect(() => {
     if (!user?.name) {
       setError("User not authenticated");
+      log("❌ User not authenticated");
       return;
     }
 
     let twilioRoom = null;
+    let isComponentMounted = true;
 
     const joinTwilioRoom = async () => {
       try {
-        log(`Requesting token for identity: ${identity}, room: ${roomId}`);
+        log("=== STARTING CONNECTION PROCESS ===");
+        log(`Identity: ${identity}`);
+        log(`Room ID: ${roomId}`);
+        log(`User Info:`, JSON.stringify(user));
         setLoading(true);
 
         // 1️⃣ Fetch Twilio token
-        const res = await fetch(
-          `https://sharenet-production.up.railway.app/twilio/token?identity=${encodeURIComponent(identity)}&room=${roomId}`
-        );
+        const tokenUrl = `https://sharenet-production.up.railway.app/twilio/token?identity=${encodeURIComponent(identity)}&room=${encodeURIComponent(roomId)}`;
+        log(`Token URL: ${tokenUrl}`);
+        
+        log("📡 Fetching token from backend...");
+        const res = await fetch(tokenUrl);
+
+        log(`Response Status: ${res.status} ${res.statusText}`);
+        log(`Response Headers:`, JSON.stringify([...res.headers.entries()]));
 
         if (!res.ok) {
-          throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+          const errorText = await res.text();
+          log("❌ Token fetch failed - Response body:", errorText);
+          throw new Error(`Token fetch failed: ${res.status} - ${errorText}`);
         }
 
         const data = await res.json();
-        log("✅ Token received:", data.token?.substring(0, 20) + "...");
+        log("✅ Token response received");
+        log("Response data keys:", Object.keys(data).join(", "));
+        
+        // Show token preview (first and last 20 chars for security)
+        if (data.token) {
+          const tokenPreview = `${data.token.substring(0, 20)}...${data.token.substring(data.token.length - 20)}`;
+          log(`Token preview: ${tokenPreview}`);
+          log(`Token length: ${data.token.length} characters`);
+        } else {
+          log("❌ No token in response!");
+        }
+
+        // Decode JWT payload for debugging
+        try {
+          const tokenParts = data.token.split('.');
+          log(`Token parts count: ${tokenParts.length}`);
+          
+          if (tokenParts.length === 3) {
+            const header = JSON.parse(atob(tokenParts[0]));
+            const payload = JSON.parse(atob(tokenParts[1]));
+            
+            log("=== TOKEN HEADER ===");
+            log(JSON.stringify(header, null, 2));
+            
+            log("=== TOKEN PAYLOAD ===");
+            log(JSON.stringify(payload, null, 2));
+            log(`Token issuer (iss): ${payload.iss}`);
+            log(`Token subject (sub): ${payload.sub}`);
+            log(`Token grants:`, JSON.stringify(payload.grants));
+            log(`Token issued at: ${new Date(payload.iat * 1000).toLocaleString()}`);
+            log(`Token expires at: ${new Date(payload.exp * 1000).toLocaleString()}`);
+            
+            // Check if token is expired
+            if (payload.exp * 1000 < Date.now()) {
+              log("⚠️ WARNING: Token is already expired!");
+            }
+          }
+        } catch (e) {
+          log("⚠️ Could not decode token:", e.message);
+        }
+
+        if (!isComponentMounted) {
+          log("Component unmounted before connection");
+          return;
+        }
 
         // 2️⃣ Connect to Twilio Room
-        log("🔌 Connecting to room:", roomId);
+        log("=== CONNECTING TO TWILIO ROOM ===");
+        log(`Room name: ${roomId}`);
+        log("Connection options:", JSON.stringify({
+          name: roomId,
+          audio: true,
+          video: { width: 640, height: 480 },
+          maxAudioBitrate: 16000,
+          maxVideoBitrate: 2500000,
+        }));
+
         twilioRoom = await connect(data.token, {
           name: roomId,
           audio: true,
           video: { width: 640, height: 480 },
           maxAudioBitrate: 16000,
           maxVideoBitrate: 2500000,
+          region: 'gll',
+          networkQuality: {
+            local: 1,
+            remote: 1
+          }
         });
 
-        log("✅ Connected to room");
+        if (!isComponentMounted) {
+          log("Component unmounted after connection, disconnecting...");
+          twilioRoom.disconnect();
+          return;
+        }
+
+        log("✅ SUCCESSFULLY CONNECTED TO ROOM");
+        log(`Room SID: ${twilioRoom.sid}`);
+        log(`Room name: ${twilioRoom.name}`);
+        log(`Room state: ${twilioRoom.state}`);
+        log(`Local participant SID: ${twilioRoom.localParticipant.sid}`);
+        log(`Local participant identity: ${twilioRoom.localParticipant.identity}`);
+        
         setRoom(twilioRoom);
         setLoading(false);
 
         // 3️⃣ Attach Local Video
-        log("📹 Attaching local tracks...");
-        try {
-          twilioRoom.localParticipant.videoTracks.forEach((publication) => {
-            try {
-              const track = publication.track;
-              
-              const videoElement = track.attach();
-              videoElement.style.width = "100%";
-              videoElement.style.height = "100%";
-              videoElement.style.objectFit = "cover";
-              
-              if (localVideoRef.current) {
-                localVideoRef.current.innerHTML = "";
-                localVideoRef.current.appendChild(videoElement);
-                log("✅ Local video attached");
-              }
-            } catch (e) {
-              log("⚠️ Error attaching local video track:", e.message);
-            }
-          });
-        } catch (e) {
-          log("⚠️ Error in local video attachment:", e.message);
-        }
+        log("=== ATTACHING LOCAL TRACKS ===");
+        log(`Video tracks count: ${twilioRoom.localParticipant.videoTracks.size}`);
+        log(`Audio tracks count: ${twilioRoom.localParticipant.audioTracks.size}`);
 
-        try {
-          twilioRoom.localParticipant.audioTracks.forEach((publication) => {
-            try {
-              publication.track.attach();
-              log("✅ Local audio attached");
-            } catch (e) {
-              log("⚠️ Error attaching local audio track:", e.message);
-            }
-          });
-        } catch (e) {
-          log("⚠️ Error in local audio attachment:", e.message);
-        }
+        twilioRoom.localParticipant.videoTracks.forEach((publication, index) => {
+          log(`Processing local video track ${index + 1}`);
+          log(`Track SID: ${publication.trackSid}`);
+          log(`Track name: ${publication.trackName}`);
+          
+          if (publication.track && localVideoRef.current) {
+            const videoElement = publication.track.attach();
+            videoElement.style.width = "100%";
+            videoElement.style.height = "100%";
+            videoElement.style.objectFit = "cover";
+            localVideoRef.current.innerHTML = "";
+            localVideoRef.current.appendChild(videoElement);
+            log("✅ Local video attached to DOM");
+          } else {
+            log("⚠️ Could not attach local video");
+          }
+        });
 
-        // 4️⃣ Handle Remote Participants Already in Room
-        log(`📊 Initial participants: ${twilioRoom.participants.size}`);
+        twilioRoom.localParticipant.audioTracks.forEach((publication, index) => {
+          log(`Processing local audio track ${index + 1}`);
+          if (publication.track) {
+            publication.track.attach();
+            log("✅ Local audio attached");
+          }
+        });
+
+        // 4️⃣ Handle existing participants
+        log("=== CHECKING FOR EXISTING PARTICIPANTS ===");
+        log(`Participants in room: ${twilioRoom.participants.size}`);
+        
         twilioRoom.participants.forEach((participant) => {
-          log(`👤 Participant already in room: ${participant.sid}`);
+          log(`Found existing participant: ${participant.identity} (SID: ${participant.sid})`);
           participantConnected(participant);
         });
 
-        // 5️⃣ Handle New Remote Participant Joining
+        // 5️⃣ Event Listeners
         twilioRoom.on("participantConnected", (participant) => {
-          log(`👤 New participant connected: ${participant.sid}`);
+          log("=== NEW PARTICIPANT CONNECTED ===");
+          log(`Identity: ${participant.identity}`);
+          log(`SID: ${participant.sid}`);
           participantConnected(participant);
         });
 
-        // 6️⃣ Handle Remote Participant Leaving
         twilioRoom.on("participantDisconnected", (participant) => {
-          log(`👤 Participant disconnected: ${participant.sid}`);
+          log("=== PARTICIPANT DISCONNECTED ===");
+          log(`Identity: ${participant.identity}`);
+          log(`SID: ${participant.sid}`);
           setParticipants((prev) => prev.filter((p) => p.sid !== participant.sid));
           if (remoteVideoRef.current) {
             remoteVideoRef.current.innerHTML = "";
           }
         });
 
-        // ✅ FIX: Handle room disconnection events
         twilioRoom.on("disconnected", (room, error) => {
+          log("=== ROOM DISCONNECTED ===");
           if (error) {
-            log("❌ Disconnected due to error:", error.message);
-            if (error.message.includes("duplicate identity")) {
-              setError("Duplicate connection detected. Please use a unique identity.");
-            } else {
-              setError(error.message);
+            log("❌ Disconnection error:");
+            log(`Error name: ${error.name}`);
+            log(`Error message: ${error.message}`);
+            log(`Error code: ${error.code}`);
+            log(`Error stack: ${error.stack}`);
+            if (isComponentMounted) {
+              setError(`Disconnected: ${error.message}`);
             }
           } else {
-            log("🔌 Disconnected from room");
+            log("Room disconnected normally");
           }
         });
 
+        twilioRoom.on("reconnecting", (error) => {
+          log("⚠️ RECONNECTING TO ROOM...");
+          log(`Reason: ${error.message}`);
+        });
+
+        twilioRoom.on("reconnected", () => {
+          log("✅ RECONNECTED TO ROOM");
+        });
+
       } catch (err) {
-        log("❌ Error joining Twilio room:", err.message);
-        if (err.message.includes("duplicate identity")) {
-          setError("Connection failed: Duplicate identity detected. Please refresh and try again.");
-        } else {
-          setError(err.message);
+        log("=== ERROR OCCURRED ===");
+        log(`Error name: ${err.name}`);
+        log(`Error message: ${err.message}`);
+        log(`Error code: ${err.code || 'N/A'}`);
+        log(`Error stack: ${err.stack}`);
+        
+        if (isComponentMounted) {
+          setError(`${err.name}: ${err.message}`);
+          setLoading(false);
         }
-        setLoading(false);
       }
     };
 
     const participantConnected = (participant) => {
-      try {
-        setParticipants((participants) => {
-          // Avoid adding duplicate participants
-          if (participants.find(p => p.sid === participant.sid)) {
-            return participants;
-          }
-          return [...participants, participant];
-        });
+      log("=== PROCESSING PARTICIPANT ===");
+      log(`Identity: ${participant.identity}`);
+      log(`SID: ${participant.sid}`);
+      log(`State: ${participant.state}`);
+      log(`Video tracks: ${participant.videoTracks.size}`);
+      log(`Audio tracks: ${participant.audioTracks.size}`);
 
-        // Attach video track
-        try {
-          participant.videoTracks.forEach((publication) => {
-            try {
-              if (publication.isSubscribed && publication.track) {
-                const track = publication.track;
-                const videoElement = track.attach();
-                videoElement.style.width = "100%";
-                videoElement.style.height = "100%";
-                videoElement.style.objectFit = "cover";
-                
-                if (remoteVideoRef.current) {
-                  remoteVideoRef.current.appendChild(videoElement);
-                  log(`✅ Remote video attached: ${participant.sid}`);
-                }
-              }
-            } catch (e) {
-              log("⚠️ Error attaching remote video:", e.message);
-            }
-          });
-        } catch (e) {
-          log("⚠️ Error in video tracks loop:", e.message);
+      setParticipants((prev) => {
+        if (prev.find(p => p.sid === participant.sid)) {
+          log("Participant already in list, skipping");
+          return prev;
         }
+        return [...prev, participant];
+      });
 
-        // Handle new tracks when published
-        try {
-          participant.on("trackSubscribed", (track) => {
-            try {
-              if (track.kind === "video") {
-                const videoElement = track.attach();
-                videoElement.style.width = "100%";
-                videoElement.style.height = "100%";
-                videoElement.style.objectFit = "cover";
-                
-                if (remoteVideoRef.current) {
-                  remoteVideoRef.current.appendChild(videoElement);
-                  log(`✅ Remote track subscribed: ${participant.sid}`);
-                }
-              }
-            } catch (e) {
-              log("⚠️ Error attaching subscribed track:", e.message);
-            }
-          });
-        } catch (e) {
-          log("⚠️ Error setting up trackSubscribed:", e.message);
+      // Attach existing video tracks
+      participant.videoTracks.forEach((publication) => {
+        log(`Video publication: ${publication.trackName}, subscribed: ${publication.isSubscribed}`);
+        
+        if (publication.isSubscribed && publication.track && remoteVideoRef.current) {
+          const videoElement = publication.track.attach();
+          videoElement.style.width = "100%";
+          videoElement.style.height = "100%";
+          videoElement.style.objectFit = "cover";
+          remoteVideoRef.current.appendChild(videoElement);
+          log(`✅ Remote video attached for ${participant.identity}`);
         }
+      });
 
-        // Handle track unsubscription
-        try {
-          participant.on("trackUnsubscribed", (track) => {
-            log(`⏹️ Remote track unsubscribed`);
-            if (track.kind === "video") {
-              track.detach().forEach(element => element.remove());
-            }
-          });
-        } catch (e) {
-          log("⚠️ Error setting up trackUnsubscribed:", e.message);
+      // Handle new track subscriptions
+      participant.on("trackSubscribed", (track) => {
+        log("=== TRACK SUBSCRIBED ===");
+        log(`Track kind: ${track.kind}`);
+        log(`Track name: ${track.name}`);
+        log(`Participant: ${participant.identity}`);
+        
+        if (track.kind === "video" && remoteVideoRef.current) {
+          const videoElement = track.attach();
+          videoElement.style.width = "100%";
+          videoElement.style.height = "100%";
+          videoElement.style.objectFit = "cover";
+          remoteVideoRef.current.appendChild(videoElement);
+          log(`✅ Subscribed video track attached`);
         }
-      } catch (e) {
-        log("⚠️ Error in participantConnected:", e.message);
-      }
+      });
+
+      participant.on("trackUnsubscribed", (track) => {
+        log("=== TRACK UNSUBSCRIBED ===");
+        log(`Track kind: ${track.kind}`);
+        log(`Participant: ${participant.identity}`);
+        track.detach().forEach(element => element.remove());
+      });
     };
 
     joinTwilioRoom();
 
-    // Cleanup: disconnect when leaving
+    // Cleanup
     return () => {
+      log("=== CLEANUP: Component unmounting ===");
+      isComponentMounted = false;
       if (twilioRoom) {
-        log("🧹 Disconnecting from room...");
+        log("Disconnecting from room...");
         twilioRoom.disconnect();
       }
     };
-  }, [roomId, user?.name]); // ✅ FIX: Only depend on stable values
+  }, [roomId, identity]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-      <h1 className="text-3xl font-bold mb-6">ShareNet Video Call</h1>
-      <p className="text-gray-400 mb-4">Room: {roomId}</p>
+      <h1 className="text-3xl font-bold mb-6">ShareNet Video Call - DEBUG MODE</h1>
+      <p className="text-gray-400 mb-2">Room: {roomId}</p>
+      <p className="text-gray-500 text-sm mb-4">Identity: {identity}</p>
 
       {loading && <div className="mb-4 text-blue-400">🔌 Connecting...</div>}
       {error && (
-        <div className="mb-4 p-4 bg-red-900/50 border border-red-500 rounded text-red-200 max-w-md text-center">
-          ❌ {error}
+        <div className="mb-4 p-4 bg-red-900/50 border border-red-500 rounded text-red-200 max-w-2xl text-center">
+          <strong>❌ Error:</strong> {error}
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row gap-8">
+      <div className="flex flex-col md:flex-row gap-8 mb-6">
         {/* Local Video */}
         <div className="flex flex-col items-center">
-          <h2 className="mb-3 text-lg font-semibold">You</h2>
+          <h2 className="mb-3 text-lg font-semibold">You ({user?.name})</h2>
           <div
             ref={localVideoRef}
             className="w-80 h-60 bg-black rounded-lg overflow-hidden shadow-lg border-2 border-blue-500"
@@ -928,7 +1008,9 @@ export default function CallRoom() {
         {/* Remote Video */}
         <div className="flex flex-col items-center">
           <h2 className="mb-3 text-lg font-semibold">
-            {participants.length > 0 ? "Partner" : "Waiting for participant..."}
+            {participants.length > 0 
+              ? `Partner (${participants[0]?.identity || 'Unknown'})` 
+              : "Waiting for participant..."}
           </h2>
           <div
             ref={remoteVideoRef}
@@ -937,15 +1019,47 @@ export default function CallRoom() {
         </div>
       </div>
 
+      {/* Debug Console */}
+      <div className="w-full max-w-4xl mb-6">
+        <div className="bg-black/50 border border-gray-700 rounded-lg p-4">
+          <h3 className="text-yellow-400 font-bold mb-2 flex items-center justify-between">
+            🔍 Debug Console
+            <button 
+              onClick={() => setDebugInfo([])}
+              className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
+            >
+              Clear
+            </button>
+          </h3>
+          <div className="bg-black rounded p-3 max-h-64 overflow-y-auto font-mono text-xs text-green-400">
+            {debugInfo.length === 0 ? (
+              <div className="text-gray-500">No logs yet...</div>
+            ) : (
+              debugInfo.map((log, i) => (
+                <div key={i} className="mb-1 break-all">{log}</div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
       <button
         onClick={() => {
+          log("End Call button clicked");
           if (room) room.disconnect();
           navigate("/");
         }}
-        className="mt-8 px-8 py-3 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
+        className="px-8 py-3 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
       >
         End Call
       </button>
+
+      {/* Instructions */}
+      <div className="mt-6 text-sm text-gray-400 max-w-2xl text-center">
+        <p className="mb-2">📋 <strong>Instructions:</strong></p>
+        <p>Check the debug console above and your browser's developer console (F12) for detailed logs.</p>
+        <p>Share these logs if you need help troubleshooting the connection issue.</p>
+      </div>
     </div>
   );
 }
