@@ -122,22 +122,42 @@ io.on("connection", (socket) => {
   // -------------------------
   // Legacy direct call signalling (optional)
   // -------------------------
-  socket.on("call-user", ({ receiverId, roomId }) => {
-    try {
-      const targetSocket = socketByUserId[receiverId];
-      if (targetSocket) {
-        io.to(targetSocket).emit("incoming-call", {
-          roomId,
-          callerId: socket.id,
-        });
-        console.log(`📞 call-user -> incoming-call: ${socket.id} -> ${receiverId} (room ${roomId})`);
-      } else {
-        console.warn("call-user: target not found", receiverId);
-      }
-    } catch (err) {
-      console.error("call-user error:", err);
+  // socket.on("call-user", ({ receiverId, roomId }) => {
+  //   try {
+  //     const targetSocket = socketByUserId[receiverId];
+  //     if (targetSocket) {
+  //       io.to(targetSocket).emit("incoming-call", {
+  //         roomId,
+  //         callerId: socket.id,
+  //       });
+  //       console.log(`📞 call-user -> incoming-call: ${socket.id} -> ${receiverId} (room ${roomId})`);
+  //     } else {
+  //       console.warn("call-user: target not found", receiverId);
+  //     }
+  //   } catch (err) {
+  //     console.error("call-user error:", err);
+  //   }
+  // });
+  socket.on("call-user", ({ receiverId, roomId, callType }) => {
+  try {
+    const targetSocket = socketByUserId[receiverId];
+    if (targetSocket) {
+      io.to(targetSocket).emit("incoming-call", {
+        roomId,
+        callerId: socket.id,
+        callType   // 🔥 SEND CALL TYPE TO CALLEE
+      });
+      console.log(
+        `📞 call-user (${callType}) -> incoming-call: ${socket.id} -> ${receiverId} (room ${roomId})`
+      );
+    } else {
+      console.warn("call-user: target not found", receiverId);
     }
-  });
+  } catch (err) {
+    console.error("call-user error:", err);
+  }
+});
+
 
   // -------------------------
   // Room / WebRTC signaling (recommended flow)

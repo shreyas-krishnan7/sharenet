@@ -90,7 +90,7 @@ export default function SharentChat({ socket }) {
     // ----------------------
     // CALL SIGNALING
     // ----------------------
-    const handleIncomingCall = ({ roomId, callerId }) => {
+    const handleIncomingCall = ({ roomId, callerId, callType }) => {
       const caller =
         onlineUsers.find((u) => u.id === callerId) ||
         onlineUsers.find((u) => u.socketId === callerId);
@@ -98,6 +98,7 @@ export default function SharentChat({ socket }) {
       setIncomingCall({
         roomId,
         callerName: caller?.name || "Unknown User",
+        callType: callType || "video", // 🔥 STORE CALL TYPE
       });
     };
 
@@ -123,7 +124,7 @@ export default function SharentChat({ socket }) {
   // ---------------------------
   // 📞 Start Call
   // ---------------------------
-  const startCall = (receiver) => {
+  const startCall = (receiver, type = "video") => {
     if (!socket || !receiver?.id) return;
 
     const roomId = generateRoomId(currentUser.id, receiver.id);
@@ -131,13 +132,24 @@ export default function SharentChat({ socket }) {
     socket.emit("call-user", {
       receiverId: receiver.id,
       roomId,
+      callType: type, // 🔥 SEND CALL TYPE
     });
 
-    navigate(`/call/${roomId}`);
+    // 🔥 ROUTE BASED ON CALL TYPE
+    if (type === "audio") {
+      navigate(`/audio-room/${roomId}`);
+    } else {
+      navigate(`/call/${roomId}`);
+    }
   };
 
   const acceptCall = () => {
-    navigate(`/call/${incomingCall.roomId}`);
+    // 🔥 ROUTE BASED ON CALL TYPE
+    if (incomingCall.callType === "audio") {
+      navigate(`/audio-room/${incomingCall.roomId}`);
+    } else {
+      navigate(`/call/${incomingCall.roomId}`);
+    }
     setIncomingCall(null);
   };
   const rejectCall = () => setIncomingCall(null);
@@ -382,12 +394,18 @@ export default function SharentChat({ socket }) {
     targetPeerIdRef.current = null;
   };
   const startAudioCall = (receiver) => {
-  if (!receiver?.id) return;
+    if (!socket || !receiver?.id) return;
 
-  const roomId = `audio_${socket.id}_${receiver.id}`;
-  socket.emit("call-user", { receiverId: receiver.id, roomId });
-  navigate(`/audio-call/${roomId}`);
-};
+    const roomId = generateRoomId(currentUser.id, receiver.id);
+
+    socket.emit("call-user", {
+      receiverId: receiver.id,
+      roomId,
+      callType: "audio",
+    });
+
+    navigate(`/audio-room/${roomId}`);
+  };
 
 
   return (
