@@ -29,6 +29,8 @@ function App() {
 
         {/* Pass same socket to CallRoom */}
         <Route path="/call/:roomId" element={<CallRoom socket={socket} />} />
+        <Route path="/audio-call/:roomId" element={<AudioCallRoom />} />
+
       </Routes>
     </Router>
   );

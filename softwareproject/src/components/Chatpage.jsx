@@ -33,7 +33,7 @@ export default function SharentChat({ socket }) {
 
     const storedUser = JSON.parse(localStorage.getItem("userInfo"));
     const me = {
-      id: storedUser?.id ,
+      id: storedUser?.id,
       name: storedUser?.name || "Guest User",
       email: storedUser?.email || "guest@example.com",
       avatar:
@@ -381,6 +381,14 @@ export default function SharentChat({ socket }) {
     pcRef.current = null;
     targetPeerIdRef.current = null;
   };
+  const startAudioCall = (receiver) => {
+  if (!receiver?.id) return;
+
+  const roomId = `audio_${socket.id}_${receiver.id}`;
+  socket.emit("call-user", { receiverId: receiver.id, roomId });
+  navigate(`/audio-call/${roomId}`);
+};
+
 
   return (
     <div className="flex h-screen w-full bg-gray-100">
@@ -473,7 +481,13 @@ export default function SharentChat({ socket }) {
                 className="p-2 bg-blue-600 text-white rounded"
                 onClick={() => startCall(selectedUser)}
               >
-                📞
+                🎦
+              </button>
+              <button
+                className="p-2 bg-green-600 text-white rounded ml-3"
+                onClick={() => startAudioCall(selectedUser)}
+              >
+                🎙️
               </button>
             </div>
 
