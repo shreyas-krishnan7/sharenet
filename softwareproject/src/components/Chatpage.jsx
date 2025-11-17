@@ -738,7 +738,7 @@ export default function SharentChat({ socket }) {
       id: storedUser?.id,
       name: storedUser?.name || "Guest User",
       email: storedUser?.email || "guest@example.com",
-      localIp: localIp, // 🔥 GUARANTEED NOT NULL NOW
+      // localIp: localIp, // 🔥 GUARANTEED NOT NULL NOW
       avatar:
         storedUser?.name
           ?.split(" ")
