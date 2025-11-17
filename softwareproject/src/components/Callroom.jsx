@@ -946,20 +946,27 @@ export default function CallRoom() {
 
       // Handle new track subscriptions
       participant.on("trackSubscribed", (track) => {
-        log("=== TRACK SUBSCRIBED ===");
-        log(`Track kind: ${track.kind}`);
-        log(`Track name: ${track.name}`);
-        log(`Participant: ${participant.identity}`);
-        
-        if (track.kind === "video" && remoteVideoRef.current) {
-          const videoElement = track.attach();
-          videoElement.style.width = "100%";
-          videoElement.style.height = "100%";
-          videoElement.style.objectFit = "cover";
-          remoteVideoRef.current.appendChild(videoElement);
-          log(`✅ Subscribed video track attached`);
-        }
-      });
+  log("=== TRACK SUBSCRIBED ===");
+  log(`Track kind: ${track.kind}`);
+
+  if (track.kind === "video" && remoteVideoRef.current) {
+    const videoElement = track.attach();
+    videoElement.style.width = "100%";
+    videoElement.style.height = "100%";
+    videoElement.style.objectFit = "cover";
+    remoteVideoRef.current.appendChild(videoElement);
+    log(`📹 Remote video attached`);
+  }
+
+  if (track.kind === "audio") {
+    const audioElement = track.attach();
+    audioElement.autoplay = true;  // Required
+    audioElement.muted = false;
+    document.body.appendChild(audioElement);
+    log(`🔊 Remote audio attached`);
+  }
+});
+
 
       participant.on("trackUnsubscribed", (track) => {
         log("=== TRACK UNSUBSCRIBED ===");
