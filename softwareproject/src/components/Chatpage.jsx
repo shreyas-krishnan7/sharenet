@@ -731,7 +731,7 @@ export default function SharentChat({ socket }) {
   // 🔥 JOIN SERVER *AFTER* localIp is fetched
   // -----------------------------------------
   useEffect(() => {
-    if (!socket || !localIp) return;
+    if (!socket ) return;
 
     const storedUser = JSON.parse(localStorage.getItem("userInfo"));
     const me = {
