@@ -435,6 +435,7 @@ export default function CallRoom() {
 
   const [room, setRoom] = useState(null);
   const user = JSON.parse(localStorage.getItem("userInfo"));
+  const identity = user?.email;
 
   useEffect(() => {
     if (!user || !user.name) return;
@@ -443,8 +444,9 @@ export default function CallRoom() {
       try {
         // 1️⃣ Fetch Twilio token
         const res = await fetch(
-          `https://sharenet-production.up.railway.app/twilio/token?identity=${user.email}&room=${roomId}`
-        );
+  `https://sharenet-production.up.railway.app/twilio/token?identity=${encodeURIComponent(identity)}&room=${roomId}`
+);
+
         const data = await res.json();
 
         // 2️⃣ Connect to Twilio Room
