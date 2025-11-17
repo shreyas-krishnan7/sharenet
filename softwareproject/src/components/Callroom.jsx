@@ -486,29 +486,42 @@ export default function CallRoom() {
 
         // 3️⃣ Attach Local Video
         log("📹 Attaching local tracks...");
-        twilioRoom.localParticipant.videoTracks.forEach((publication) => {
-          const track = publication.track;
-          const trackId = track.sid || track.id || Math.random().toString();
-          
-          if (!localTracksRef.current.has(trackId)) {
-            const videoElement = track.attach();
-            videoElement.style.width = "100%";
-            videoElement.style.height = "100%";
-            videoElement.style.objectFit = "cover";
-            if (localVideoRef.current) {
-              localVideoRef.current.innerHTML = ""; // Clear previous
-              localVideoRef.current.appendChild(videoElement);
-              localTracksRef.current.add(trackId);
-              log("✅ Local video attached:", trackId);
+        try {
+          twilioRoom.localParticipant.videoTracks.forEach((publication) => {
+            try {
+              const track = publication.track;
+              const trackId = `local_video_${Date.now()}`;
+              
+              const videoElement = track.attach();
+              videoElement.style.width = "100%";
+              videoElement.style.height = "100%";
+              videoElement.style.objectFit = "cover";
+              
+              if (localVideoRef.current) {
+                localVideoRef.current.innerHTML = "";
+                localVideoRef.current.appendChild(videoElement);
+                log("✅ Local video attached");
+              }
+            } catch (e) {
+              log("⚠️ Error attaching local video track:", e.message);
             }
-          }
-        });
+          });
+        } catch (e) {
+          log("⚠️ Error in local video attachment:", e.message);
+        }
 
-        twilioRoom.localParticipant.audioTracks.forEach((publication) => {
-          const track = publication.track;
-          track.attach();
-          log("✅ Local audio attached");
-        });
+        try {
+          twilioRoom.localParticipant.audioTracks.forEach((publication) => {
+            try {
+              publication.track.attach();
+              log("✅ Local audio attached");
+            } catch (e) {
+              log("⚠️ Error attaching local audio track:", e.message);
+            }
+          });
+        } catch (e) {
+          log("⚠️ Error in local audio attachment:", e.message);
+        }
 
         // 4️⃣ Handle Remote Participants Already in Room
         log(`📊 Initial participants: ${twilioRoom.participants.size}`);
@@ -539,52 +552,65 @@ export default function CallRoom() {
     };
 
     const participantConnected = (participant) => {
-      setParticipants((participants) => [...participants, participant]);
+      try {
+        setParticipants((participants) => [...participants, participant]);
 
-      // Attach video track
-      participant.videoTracks.forEach((publication) => {
-        const track = publication.track;
-        const trackId = track.sid || track.id || Math.random().toString();
-        
-        if (!remoteTracksRef.current.has(trackId)) {
-          const videoElement = track.attach();
-          videoElement.style.width = "100%";
-          videoElement.style.height = "100%";
-          videoElement.style.objectFit = "cover";
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.appendChild(videoElement);
-            remoteTracksRef.current.add(trackId);
-            log(`✅ Remote video attached: ${participant.sid}`);
-          }
-        }
-      });
-
-      // Handle new tracks when published
-      participant.on("trackSubscribed", (track) => {
-        if (track.kind === "video") {
-          const trackId = track.sid || track.id || Math.random().toString();
-          if (!remoteTracksRef.current.has(trackId)) {
-            const videoElement = track.attach();
-            videoElement.style.width = "100%";
-            videoElement.style.height = "100%";
-            videoElement.style.objectFit = "cover";
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.appendChild(videoElement);
-              remoteTracksRef.current.add(trackId);
-              log(`✅ Remote track subscribed: ${trackId}`);
+        // Attach video track
+        try {
+          participant.videoTracks.forEach((publication) => {
+            try {
+              const track = publication.track;
+              const videoElement = track.attach();
+              videoElement.style.width = "100%";
+              videoElement.style.height = "100%";
+              videoElement.style.objectFit = "cover";
+              
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.appendChild(videoElement);
+                log(`✅ Remote video attached: ${participant.sid}`);
+              }
+            } catch (e) {
+              log("⚠️ Error attaching remote video:", e.message);
             }
-          }
+          });
+        } catch (e) {
+          log("⚠️ Error in video tracks loop:", e.message);
         }
-      });
 
-      // Handle track unsubscription
-      participant.on("trackUnsubscribed", (track) => {
-        const trackId = track.sid || track.id;
-        if (trackId) {
-          remoteTracksRef.current.delete(trackId);
+        // Handle new tracks when published
+        try {
+          participant.on("trackSubscribed", (track) => {
+            try {
+              if (track.kind === "video") {
+                const videoElement = track.attach();
+                videoElement.style.width = "100%";
+                videoElement.style.height = "100%";
+                videoElement.style.objectFit = "cover";
+                
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.appendChild(videoElement);
+                  log(`✅ Remote track subscribed: ${participant.sid}`);
+                }
+              }
+            } catch (e) {
+              log("⚠️ Error attaching subscribed track:", e.message);
+            }
+          });
+        } catch (e) {
+          log("⚠️ Error setting up trackSubscribed:", e.message);
         }
-        log(`⏹️ Remote track unsubscribed`);
-      });
+
+        // Handle track unsubscription
+        try {
+          participant.on("trackUnsubscribed", (track) => {
+            log(`⏹️ Remote track unsubscribed`);
+          });
+        } catch (e) {
+          log("⚠️ Error setting up trackUnsubscribed:", e.message);
+        }
+      } catch (e) {
+        log("⚠️ Error in participantConnected:", e.message);
+      }
     };
 
     joinTwilioRoom();
