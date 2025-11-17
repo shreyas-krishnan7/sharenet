@@ -434,64 +434,142 @@ export default function CallRoom() {
   const remoteVideoRef = useRef(null);
 
   const [room, setRoom] = useState(null);
-  const user = JSON.parse(localStorage.getItem("userInfo"));
-  const identity=`${user.id}`;
+  const [participants, setParticipants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
+  const user = JSON.parse(localStorage.getItem("userInfo"));
+  const identity = `${user?.id || "user"}`;
+
+  // Track mounted elements to avoid duplicates
+  const localTracksRef = useRef(new Set());
+  const remoteTracksRef = useRef(new Set());
+
+  const log = (...args) => console.log("🎥 Twilio:", ...args);
 
   useEffect(() => {
-    if (!user || !user.name) return;
+    if (!user?.name) {
+      setError("User not authenticated");
+      return;
+    }
 
     const joinTwilioRoom = async () => {
       try {
+        log(`Requesting token for identity: ${identity}, room: ${roomId}`);
+        setLoading(true);
+
         // 1️⃣ Fetch Twilio token
         const res = await fetch(
-  `https://sharenet-production.up.railway.app/twilio/token?identity=${encodeURIComponent(identity)}&room=${roomId}`
-);
+          `https://sharenet-production.up.railway.app/twilio/token?identity=${encodeURIComponent(identity)}&room=${roomId}`
+        );
+
+        if (!res.ok) {
+          throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+        }
 
         const data = await res.json();
+        log("✅ Token received:", data.token?.substring(0, 20) + "...");
 
         // 2️⃣ Connect to Twilio Room
+        log("🔌 Connecting to room:", roomId);
         const twilioRoom = await connect(data.token, {
-          video: { width: 640 },
+          name: roomId,
           audio: true,
+          video: { width: 640, height: 480 },
+          maxAudioBitrate: 16000,
+          maxVideoBitrate: 2500000,
         });
 
+        log("✅ Connected to room");
         setRoom(twilioRoom);
+        setLoading(false);
 
         // 3️⃣ Attach Local Video
+        log("📹 Attaching local tracks...");
         twilioRoom.localParticipant.videoTracks.forEach((publication) => {
-          localVideoRef.current.appendChild(publication.track.attach());
+          const videoElement = publication.track.attach();
+          videoElement.style.width = "100%";
+          videoElement.style.height = "100%";
+          videoElement.style.objectFit = "cover";
+          if (localVideoRef.current && !localTracksRef.current.has(publication.track.sid)) {
+            localVideoRef.current.innerHTML = ""; // Clear previous
+            localVideoRef.current.appendChild(videoElement);
+            localTracksRef.current.add(publication.track.sid);
+            log("✅ Local video attached");
+          }
+        });
+
+        twilioRoom.localParticipant.audioTracks.forEach((publication) => {
+          publication.track.attach();
+          log("✅ Local audio attached");
         });
 
         // 4️⃣ Handle Remote Participants Already in Room
+        log(`📊 Initial participants: ${twilioRoom.participants.size}`);
         twilioRoom.participants.forEach((participant) => {
-          participant.tracks.forEach((publication) => {
-            if (publication.isSubscribed) {
-              remoteVideoRef.current.appendChild(publication.track.attach());
-            }
-          });
-
-          participant.on("trackSubscribed", (track) => {
-            remoteVideoRef.current.appendChild(track.attach());
-          });
+          log(`👤 Participant already in room: ${participant.sid}`);
+          participantConnected(participant);
         });
 
         // 5️⃣ Handle New Remote Participant Joining
         twilioRoom.on("participantConnected", (participant) => {
-          participant.on("trackSubscribed", (track) => {
-            remoteVideoRef.current.appendChild(track.attach());
-          });
+          log(`👤 New participant connected: ${participant.sid}`);
+          participantConnected(participant);
         });
 
         // 6️⃣ Handle Remote Participant Leaving
-        twilioRoom.on("participantDisconnected", () => {
+        twilioRoom.on("participantDisconnected", (participant) => {
+          log(`👤 Participant disconnected: ${participant.sid}`);
           if (remoteVideoRef.current) {
             remoteVideoRef.current.innerHTML = "";
+            remoteTracksRef.current.clear();
           }
         });
       } catch (err) {
-        console.error("Error joining Twilio room:", err);
+        log("❌ Error joining Twilio room:", err.message);
+        setError(err.message);
+        setLoading(false);
       }
+    };
+
+    const participantConnected = (participant) => {
+      setParticipants((participants) => [...participants, participant]);
+
+      // Attach video track
+      participant.videoTracks.forEach((publication) => {
+        if (!remoteTracksRef.current.has(publication.track.sid)) {
+          const videoElement = publication.track.attach();
+          videoElement.style.width = "100%";
+          videoElement.style.height = "100%";
+          videoElement.style.objectFit = "cover";
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.appendChild(videoElement);
+            remoteTracksRef.current.add(publication.track.sid);
+            log(`✅ Remote video attached: ${participant.sid}`);
+          }
+        }
+      });
+
+      // Handle new tracks when published
+      participant.on("trackSubscribed", (track) => {
+        if (track.kind === "video" && !remoteTracksRef.current.has(track.sid)) {
+          const videoElement = track.attach();
+          videoElement.style.width = "100%";
+          videoElement.style.height = "100%";
+          videoElement.style.objectFit = "cover";
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.appendChild(videoElement);
+            remoteTracksRef.current.add(track.sid);
+            log(`✅ Remote track subscribed: ${track.sid}`);
+          }
+        }
+      });
+
+      // Handle track unsubscription
+      participant.on("trackUnsubscribed", (track) => {
+        remoteTracksRef.current.delete(track.sid);
+        log(`⏹️ Remote track unsubscribed: ${track.sid}`);
+      });
     };
 
     joinTwilioRoom();
@@ -499,36 +577,49 @@ export default function CallRoom() {
     // Cleanup: disconnect when leaving
     return () => {
       if (room) {
+        log("🧹 Disconnecting from room...");
         room.disconnect();
+        setRoom(null);
       }
     };
   }, [roomId, user]);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-      <h1 className="text-2xl font-bold mb-4">Video Call — Room {roomId}</h1>
+      <h1 className="text-3xl font-bold mb-6">ShareNet Video Call</h1>
+      <p className="text-gray-400 mb-4">Room: {roomId}</p>
 
-      <div className="flex gap-6">
+      {loading && <div className="mb-4 text-blue-400">🔌 Connecting...</div>}
+      {error && <div className="mb-4 text-red-400">❌ Error: {error}</div>}
+
+      <div className="flex gap-8">
+        {/* Local Video */}
         <div className="flex flex-col items-center">
-          <h2 className="mb-2">You</h2>
+          <h2 className="mb-3 text-lg font-semibold">You</h2>
           <div
             ref={localVideoRef}
-            className="w-64 h-48 bg-black rounded-lg overflow-hidden"
-          ></div>
+            className="w-80 h-60 bg-black rounded-lg overflow-hidden shadow-lg border-2 border-blue-500"
+          />
         </div>
 
+        {/* Remote Video */}
         <div className="flex flex-col items-center">
-          <h2 className="mb-2">Partner</h2>
+          <h2 className="mb-3 text-lg font-semibold">
+            {participants.length > 0 ? "Partner" : "Waiting for participant..."}
+          </h2>
           <div
             ref={remoteVideoRef}
-            className="w-64 h-48 bg-black rounded-lg overflow-hidden"
-          ></div>
+            className="w-80 h-60 bg-black rounded-lg overflow-hidden shadow-lg border-2 border-green-500"
+          />
         </div>
       </div>
 
       <button
-        onClick={() => navigate("/")}
-        className="mt-8 px-6 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
+        onClick={() => {
+          if (room) room.disconnect();
+          navigate("/");
+        }}
+        className="mt-8 px-8 py-3 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
       >
         End Call
       </button>
