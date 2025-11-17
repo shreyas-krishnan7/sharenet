@@ -435,7 +435,7 @@ export default function CallRoom() {
 
   const [room, setRoom] = useState(null);
   const user = JSON.parse(localStorage.getItem("userInfo"));
-  const identity = user?.email;
+  const identity = user?.name;
 
   useEffect(() => {
     if (!user || !user.name) return;
