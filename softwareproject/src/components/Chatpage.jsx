@@ -406,6 +406,9 @@ export default function SharentChat({ socket }) {
 
     fileReader.readAsArrayBuffer(file);
   };
+  const handlereturntodashboard = () => {
+    navigate('/dashboard');
+  }
 
   // -----------------------------------
   // UI (unchanged)
@@ -415,8 +418,8 @@ export default function SharentChat({ socket }) {
       {/* SIDEBAR */}
       <div className="w-full md:w-80 md:min-w-[280px] bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
         <div className="p-3 sm:p-4 md:p-6 border-b border-gray-200">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: "#e91359" }}>
-            Sharenet
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: "#e91359" }} onClick={handlereturntodashboard}>
+            ShareNet
           </h1>
         </div>
 
