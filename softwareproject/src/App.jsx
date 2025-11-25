@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard.jsx'
 import Chatpage from './components/Chatpage.jsx'
 import CallRoom from './components/Callroom.jsx'
 import AudioCallRoom from './components/Audioroom.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 import { io } from "socket.io-client";
@@ -20,18 +21,35 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<ShareNet />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/dashboard" element={<Dashboard />} />
 
-        {/* Pass socket to Chatpage */}
-        <Route path="/chatpage" element={<Chatpage socket={socket} />} />
+        {/* Protected Routes */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
 
-        {/* Pass same socket to CallRoom */}
-        <Route path="/call/:roomId" element={<CallRoom socket={socket} />} />
-        <Route path="/audio-room/:roomId" element={<AudioCallRoom socket={socket} />} />
+        <Route path="/chatpage" element={
+          <ProtectedRoute>
+            <Chatpage socket={socket} />
+          </ProtectedRoute>
+        } />
 
+        <Route path="/call/:roomId" element={
+          <ProtectedRoute>
+            <CallRoom socket={socket} />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/audio-room/:roomId" element={
+          <ProtectedRoute>
+            <AudioCallRoom socket={socket} />
+          </ProtectedRoute>
+        } />
       </Routes>
     </Router>
   );
