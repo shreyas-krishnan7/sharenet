@@ -130,7 +130,7 @@ const ShareNet = () => {
             </div>
             <h3 className="text-xl font-semibold text-black mb-3">Real-time Chat</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Instantly message anyone on your local network with our fast and responsive chat.
+              Instantly message online peers with our fast and responsive chat.
             </p>
           </div>
 
@@ -173,7 +173,7 @@ const ShareNet = () => {
             </div>
             <h3 className="text-xl font-semibold text-black mb-3">Secure & Private</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Your conversations and files are private ..
+              Your conversations and files are private .
             </p>
           </div>
 
@@ -183,7 +183,7 @@ const ShareNet = () => {
       {/* Footer */}
       <footer className="py-6 px-10 bg-white text-center border-t border-gray-200">
         <p className="text-sm text-gray-400">
-          © 2025 ShareNet | Works only on the same Wi-Fi network.
+          © 2025 ShareNet | Connect. Chat. Share. Call.
         </p>
       </footer>
 
