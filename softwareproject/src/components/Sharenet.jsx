@@ -112,12 +112,11 @@ const ShareNet = () => {
       {/* Features Section */}
       <section className="py-20 px-10 bg-white text-center">
         <h2 className="text-[42px] font-bold text-black mb-4 leading-tight md:text-3xl sm:text-2xl">
-          Everything you need for seamless local<br className="hidden sm:inline" />
+          Everything you need for seamless <br className="hidden sm:inline" />
           communication
         </h2>
         <p className="text-base leading-relaxed mb-[60px]" style={{ color: '#4a90e2' }}>
-          ShareNet provides a suite of tools to connect with peers on your network, without needing an internet<br className="hidden lg:inline" />
-          connection.
+          ShareNet provides a suite of tools to connect with peers directly without involving the servers <br className="hidden lg:inline" />
         </p>
 
         <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-6 max-w-[1200px] mx-auto lg:grid-cols-2 sm:grid-cols-1">
@@ -145,7 +144,7 @@ const ShareNet = () => {
             </div>
             <h3 className="text-xl font-semibold text-black mb-3">File Sharing</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Share documents, images, and other files of any size quickly and securely.
+              Share documents, images, and other files quickly and securely.
             </p>
           </div>
 
@@ -159,23 +158,10 @@ const ShareNet = () => {
             </div>
             <h3 className="text-xl font-semibold text-black mb-3">Video Calls</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              High-quality video calls without latency, using your local network's bandwidth.
+              High-quality video calls without latency 
             </p>
           </div>
 
-          {/* Feature 4 */}
-          <div className="bg-white border border-gray-200 rounded-xl p-8 px-6 text-left transition-all duration-300 hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] hover:-translate-y-1 hover:border-[#e91359]">
-            <div 
-              className="w-12 h-12 rounded-lg flex items-center justify-center mb-4 text-[#e91359]"
-              style={{ backgroundColor: '#fef2f6' }}
-            >
-              <Share2 size={24} />
-            </div>
-            <h3 className="text-xl font-semibold text-black mb-3">LAN-based Connection</h3>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              Connect directly with devices on the same Wi-Fi, ensuring a stable connection.
-            </p>
-          </div>
 
           {/* Feature 5 */}
           <div className="bg-white border border-gray-200 rounded-xl p-8 px-6 text-left transition-all duration-300 hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] hover:-translate-y-1 hover:border-[#e91359]">
@@ -187,23 +173,10 @@ const ShareNet = () => {
             </div>
             <h3 className="text-xl font-semibold text-black mb-3">Secure & Private</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Your conversations and files are private and never leave your local network.
+              Your conversations and files are private ..
             </p>
           </div>
 
-          {/* Feature 6 */}
-          <div className="bg-white border border-gray-200 rounded-xl p-8 px-6 text-left transition-all duration-300 hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] hover:-translate-y-1 hover:border-[#e91359]">
-            <div 
-              className="w-12 h-12 rounded-lg flex items-center justify-center mb-4 text-[#e91359]"
-              style={{ backgroundColor: '#fef2f6' }}
-            >
-              <WifiOff size={24} />
-            </div>
-            <h3 className="text-xl font-semibold text-black mb-3">No Internet Required</h3>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              Communicate freely even when the internet is down or unavailable.
-            </p>
-          </div>
         </div>
       </section>
 

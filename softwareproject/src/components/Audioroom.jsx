@@ -180,10 +180,10 @@ export default function AudioCallRoom() {
             setTimeout(() => {
               setRoom(null);
               setParticipants([]);
-              navigate("/");
+              navigate("/dashboard");
             }, 500);
           } else {
-            navigate("/");
+            navigate("/dashboard");
           }
         }}
         className="px-8 py-3 mt-8 bg-red-600 hover:bg-red-700 rounded text-white font-semibold transition"
