@@ -22,6 +22,7 @@ Built using the MERN stack, WebSockets, and Twilio APIs, ShareNet demonstrates r
 
 ---
 
+
 ## 📌 Overview
 
 ShareNet was developed to provide a seamless communication experience by combining instant messaging, file sharing, and voice/video calling within a single application.
@@ -36,6 +37,36 @@ The platform enables users to:
 * Communicate through secure encrypted channels
 
 ---
+
+
+## 📌 ScreenShots 
+
+<img width="1600" height="722" alt="image" src="https://github.com/user-attachments/assets/d82f3ce8-3d41-48a1-b8a9-987f0776d89e" />
+<img width="1600" height="704" alt="image" src="https://github.com/user-attachments/assets/1a62f519-db82-473b-8fc2-6d6ecb37cfe5" />
+Landing Page 
+
+<img width="1600" height="724" alt="image" src="https://github.com/user-attachments/assets/41414193-80f4-49fb-a944-f12ee8589555" />
+Registeration Page 
+
+<img width="1600" height="722" alt="image" src="https://github.com/user-attachments/assets/f08fbb52-acfd-457d-9112-4d20524c8702" />
+Dashboard 
+
+<img width="1280" height="705" alt="image" src="https://github.com/user-attachments/assets/3f4a754d-ed07-446d-aac9-fd6764ac98d5" />
+Chat interface , File shared and recieved 
+
+<img width="1280" height="705" alt="image" src="https://github.com/user-attachments/assets/97d3c018-cdfb-495f-8a16-3a25ab2d9490" />
+<img width="1600" height="722" alt="image" src="https://github.com/user-attachments/assets/d7d7fad2-1c60-48ba-9963-a690216b50e9" />
+
+
+
+
+
+
+
+
+
+---
+
 
 ## ✨ Features
 
