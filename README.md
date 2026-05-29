@@ -357,16 +357,4 @@ Built using a complete MERN-based architecture with separate frontend and backen
 * Message Search Functionality
 * Mobile Application Support
 
----
 
-## ⭐ Support
-
-If you found this project interesting, consider giving the repository a star.
-
-It helps support the project and motivates further development.
-
----
-
-## 📜 License
-
-This project was developed for educational and learning purposes.
